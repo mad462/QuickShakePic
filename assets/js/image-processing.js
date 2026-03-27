@@ -1,4 +1,4 @@
-﻿import { PALETTE_PRESETS, refs, state } from './state.js';
+import { refs, state } from './state.js';
 import {
     clamp,
     clampChannel,
@@ -225,8 +225,90 @@ export function indexedToBMP(width, height, indices, palette) {
     return buffer;
 }
 
+const DEFAULT_PALETTE_NAME = '4-color.act';
+const DEFAULT_PALETTE = [
+    [0, 0, 0],
+    [255, 255, 255],
+    [255, 255, 0],
+    [255, 0, 0]
+];
+
+const paletteStore = {
+    [DEFAULT_PALETTE_NAME]: DEFAULT_PALETTE
+};
+
+function normalizePalette(palette) {
+    if (!Array.isArray(palette) || !palette.length) {
+        return DEFAULT_PALETTE;
+    }
+    return palette
+        .filter((color) => Array.isArray(color) && color.length >= 3)
+        .map((color) => [clampChannel(color[0]), clampChannel(color[1]), clampChannel(color[2])]);
+}
+
+function parseActPalette(buffer) {
+    const bytes = new Uint8Array(buffer);
+    if (bytes.length < 3) {
+        return DEFAULT_PALETTE;
+    }
+
+    let colorCount = Math.floor(Math.min(bytes.length, 768) / 3);
+    if (bytes.length >= 770) {
+        const declaredCount = (bytes[768] << 8) | bytes[769];
+        if (declaredCount > 0 && declaredCount <= 256) {
+            colorCount = Math.min(colorCount, declaredCount);
+        }
+    }
+
+    const palette = [];
+    for (let index = 0; index < colorCount; index++) {
+        const offset = index * 3;
+        palette.push([bytes[offset], bytes[offset + 1], bytes[offset + 2]]);
+    }
+
+    return normalizePalette(palette);
+}
+
+export function registerPalette(name, palette) {
+    if (!name) {
+        return;
+    }
+    paletteStore[name] = normalizePalette(palette);
+}
+
+export async function loadPaletteFromACT(name, url) {
+    if (!name || !url) {
+        return;
+    }
+    if (paletteStore[name]) {
+        return;
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`加载色板失败: ${name}`);
+    }
+    const buffer = await response.arrayBuffer();
+    registerPalette(name, parseActPalette(buffer));
+}
+
+export async function preloadPalettesFromManifest(entries, basePath = './act/') {
+    const tasks = (entries || []).map(async (entry) => {
+        const filename = typeof entry === 'string' ? entry : entry?.file;
+        if (!filename) {
+            return;
+        }
+        try {
+            await loadPaletteFromACT(filename, `${basePath}${filename}`);
+        } catch {
+            // ignore failed palette file, keep app usable
+        }
+    });
+    await Promise.all(tasks);
+}
+
 export function getSelectedPalette(paletteName) {
-    return PALETTE_PRESETS[paletteName] || PALETTE_PRESETS['4-color.act'];
+    return paletteStore[paletteName] || paletteStore[DEFAULT_PALETTE_NAME] || DEFAULT_PALETTE;
 }
 
 export function findNearestPaletteColor(red, green, blue, palette) {

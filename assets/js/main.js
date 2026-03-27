@@ -1,4 +1,5 @@
 import { syncAdjustmentInputs, resetAdjustments, updateAdjustmentPreview, updateAdjustmentValueLabels } from './image-processing.js';
+import { preloadPalettesFromManifest } from './image-processing.js';
 import {
     appendFloatingPreviewToBody,
     constants,
@@ -35,6 +36,59 @@ import {
 import { normalizeHexColor } from './utils.js';
 
 const HISTORY_LIMIT = 80;
+
+const DEFAULT_PALETTE_VALUE = '4-color.act';
+const NO_PALETTE_VALUE = '__none__';
+
+async function initializePaletteOptions() {
+    const manifestUrl = './act/palettes.json';
+    let actFiles = [];
+
+    try {
+        const response = await fetch(manifestUrl, { cache: 'no-store' });
+        if (response.ok) {
+            const manifest = await response.json();
+            if (Array.isArray(manifest)) {
+                actFiles = manifest.filter((name) => typeof name === 'string');
+            } else if (Array.isArray(manifest?.palettes)) {
+                actFiles = manifest.palettes
+                    .map((entry) => (typeof entry === 'string' ? entry : entry?.file))
+                    .filter((name) => typeof name === 'string');
+            }
+        }
+    } catch {
+        // manifest missing is allowed, keep fallback options
+    }
+
+    if (actFiles.length) {
+        refs.paletteSelect.innerHTML = '';
+        const noneOption = document.createElement('option');
+        noneOption.value = NO_PALETTE_VALUE;
+        noneOption.textContent = '不使用调色板';
+        refs.paletteSelect.appendChild(noneOption);
+
+        actFiles.forEach((filename) => {
+            const option = document.createElement('option');
+            option.value = filename;
+            option.textContent = filename;
+            refs.paletteSelect.appendChild(option);
+        });
+    }
+
+    await preloadPalettesFromManifest(
+        Array.from(refs.paletteSelect.options)
+            .map((option) => option.value)
+            .filter((value) => value && value !== NO_PALETTE_VALUE),
+        './act/'
+    );
+
+    const availableValues = new Set(Array.from(refs.paletteSelect.options).map((option) => option.value));
+    if (!availableValues.has(refs.paletteSelect.value)) {
+        refs.paletteSelect.value = availableValues.has(DEFAULT_PALETTE_VALUE)
+            ? DEFAULT_PALETTE_VALUE
+            : (availableValues.has(NO_PALETTE_VALUE) ? NO_PALETTE_VALUE : refs.paletteSelect.options[0]?.value || '');
+    }
+}
 
 function isTypingElement(target) {
     return Boolean(target) && (
@@ -249,7 +303,7 @@ function setWorkspacePanOffset(left, top) {
 }
 
 function persistUserSettings() {
-    const ditherEnabled = refs.paletteSelect.value !== '__none__';
+    const ditherEnabled = refs.paletteSelect.value !== NO_PALETTE_VALUE;
     if (refs.ditherEnabledInput) {
         refs.ditherEnabledInput.checked = ditherEnabled;
     }
@@ -321,7 +375,7 @@ function loadUserSettings() {
             refs.paletteSelect.value = parsed.palette;
         }
         if (refs.ditherEnabledInput) {
-            refs.ditherEnabledInput.checked = refs.paletteSelect.value !== '__none__';
+            refs.ditherEnabledInput.checked = refs.paletteSelect.value !== NO_PALETTE_VALUE;
         }
         if (parsed.previewMode === 'fit' || parsed.previewMode === 'actual') {
             state.previewMode = parsed.previewMode;
@@ -575,7 +629,7 @@ function bindAdjustmentControls() {
 
     refs.paletteSelect.addEventListener('change', () => {
         if (refs.ditherEnabledInput) {
-            refs.ditherEnabledInput.checked = refs.paletteSelect.value !== '__none__';
+            refs.ditherEnabledInput.checked = refs.paletteSelect.value !== NO_PALETTE_VALUE;
         }
         schedulePreviewRender();
         updateDitherUIState();
@@ -1092,9 +1146,10 @@ function suppressToolbarSpaceTrigger() {
     refs.sidePanel?.addEventListener('keypress', handleSpaceSuppression, true);
 }
 
-function initialize() {
+async function initialize() {
     appendFloatingPreviewToBody();
     initializePresetManager();
+    await initializePaletteOptions();
     loadUserSettings();
     bindFileInteractions();
     bindResolutionControls();
@@ -1109,7 +1164,7 @@ function initialize() {
     updateDitherUIState();
     syncOuterMaskWithPreviewMode();
     if (refs.ditherEnabledInput) {
-        refs.ditherEnabledInput.checked = refs.paletteSelect.value !== '__none__';
+        refs.ditherEnabledInput.checked = refs.paletteSelect.value !== NO_PALETTE_VALUE;
     }
     syncAdjustmentInputs();
     state.targetWidth = Number.parseInt(refs.widthInput.value, 10) || 0;

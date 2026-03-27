@@ -99,46 +99,6 @@ export const constants = {
     USER_SETTINGS_STORAGE_KEY: 'quickshakepic.settings.v1'
 };
 
-export const PALETTE_PRESETS = {
-    '4-color.act': [
-        [0, 0, 0],
-        [255, 255, 255],
-        [255, 255, 0],
-        [255, 0, 0]
-    ],
-    '6-color.act': [
-        [0, 0, 0],
-        [255, 255, 255],
-        [255, 255, 0],
-        [255, 0, 0],
-        [0, 0, 255],
-        [0, 255, 0]
-    ],
-    'Black-White.act': [
-        [0, 0, 0],
-        [255, 255, 255]
-    ],
-    'Black-White-Red.act': [
-        [0, 0, 0],
-        [255, 0, 0],
-        [255, 255, 255]
-    ],
-    'Black-White-Yellow.act': [
-        [0, 0, 0],
-        [255, 255, 0],
-        [255, 255, 255]
-    ],
-    'N-color.act': [
-        [0, 0, 0],
-        [0, 0, 255],
-        [255, 0, 0],
-        [0, 255, 0],
-        [255, 128, 0],
-        [255, 255, 0],
-        [255, 255, 255]
-    ]
-};
-
 export function appendFloatingPreviewToBody() {
     if (refs.floatingPreview.parentElement !== document.body) {
         document.body.appendChild(refs.floatingPreview);
