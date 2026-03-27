@@ -200,11 +200,13 @@ export function applyWeakSnap() {
 
     const horizontalSnap = resolveSnapEdge('horizontal', {
         left: canvasData.left - cropBoxData.left,
-        right: (canvasData.left + canvasData.width) - (cropBoxData.left + cropBoxData.width)
+        right: (canvasData.left + canvasData.width) - (cropBoxData.left + cropBoxData.width),
+        centerX: (canvasData.left + canvasData.width / 2) - (cropBoxData.left + cropBoxData.width / 2)
     });
     const verticalSnap = resolveSnapEdge('vertical', {
         top: canvasData.top - cropBoxData.top,
-        bottom: (canvasData.top + canvasData.height) - (cropBoxData.top + cropBoxData.height)
+        bottom: (canvasData.top + canvasData.height) - (cropBoxData.top + cropBoxData.height),
+        centerY: (canvasData.top + canvasData.height / 2) - (cropBoxData.top + cropBoxData.height / 2)
     });
 
     if (!horizontalSnap && !verticalSnap) {

@@ -32,13 +32,44 @@ import {
 } from './preset-manager.js';
 import { normalizeHexColor } from './utils.js';
 
+function clampSidePanelPosition(left, top) {
+    if (!refs.sidePanel) {
+        return { left: 18, top: 18 };
+    }
+
+    const panelRect = refs.sidePanel.getBoundingClientRect();
+    const maxLeft = Math.max(window.innerWidth - panelRect.width - 12, 12);
+    const maxTop = Math.max(window.innerHeight - panelRect.height - 12, 12);
+
+    return {
+        left: Math.min(Math.max(left, 12), maxLeft),
+        top: Math.min(Math.max(top, 12), maxTop)
+    };
+}
+
+function setSidePanelPosition(left, top) {
+    if (!refs.sidePanel) {
+        return;
+    }
+
+    const clamped = clampSidePanelPosition(left, top);
+    state.sidePanelPosition = clamped;
+    refs.sidePanel.style.left = `${clamped.left}px`;
+    refs.sidePanel.style.top = `${clamped.top}px`;
+}
+
+function initializeSidePanelPosition() {
+    if (!refs.sidePanel) {
+        return;
+    }
+
+    const panelRect = refs.sidePanel.getBoundingClientRect();
+    const initialLeft = Math.max(window.innerWidth - panelRect.width - 18, 12);
+    setSidePanelPosition(initialLeft, 18);
+}
+
 function bindFileInteractions() {
     refs.pickFileBtn.addEventListener('click', () => refs.fileInput.click());
-    refs.dropZone.addEventListener('click', (event) => {
-        if (event.target !== refs.pickFileBtn) {
-            refs.fileInput.click();
-        }
-    });
 
     refs.dropZone.addEventListener('dragover', (event) => {
         event.preventDefault();
@@ -310,7 +341,27 @@ function bindWindowInteractions() {
             } else {
                 updateOverlayMask(0, 0);
             }
+            if (state.sidePanelPosition) {
+                setSidePanelPosition(state.sidePanelPosition.left, state.sidePanelPosition.top);
+            } else {
+                initializeSidePanelPosition();
+            }
         }, 120);
+    });
+
+    refs.sidePanelDragHandle?.addEventListener('pointerdown', (event) => {
+        if (!refs.sidePanel) {
+            return;
+        }
+        event.preventDefault();
+        const rect = refs.sidePanel.getBoundingClientRect();
+        state.sidePanelDragState = {
+            offsetX: event.clientX - rect.left,
+            offsetY: event.clientY - rect.top
+        };
+        refs.sidePanel.classList.add('dragging');
+        document.body.style.cursor = 'move';
+        document.body.style.userSelect = 'none';
     });
 
     refs.floatingPreview.addEventListener('pointerdown', (event) => {
@@ -333,7 +384,49 @@ function bindWindowInteractions() {
         event.preventDefault();
     });
 
+    refs.editorStage.addEventListener('dblclick', () => {
+        if (!state.cropper) {
+            return;
+        }
+
+        const cropBoxData = state.cropper.getCropBoxData();
+        const canvasData = state.cropper.getCanvasData();
+
+        if (!cropBoxData || !canvasData || !canvasData.width || !canvasData.height) {
+            return;
+        }
+
+        // Scale proportionally so image fully covers crop frame (no stretch).
+        const scaleFactor = Math.max(
+            cropBoxData.width / canvasData.width,
+            cropBoxData.height / canvasData.height
+        );
+
+        const nextWidth = canvasData.width * scaleFactor;
+        const nextHeight = canvasData.height * scaleFactor;
+        const cropCenterX = cropBoxData.left + cropBoxData.width / 2;
+        const cropCenterY = cropBoxData.top + cropBoxData.height / 2;
+
+        state.cropper.setCanvasData({
+            left: cropCenterX - nextWidth / 2,
+            top: cropCenterY - nextHeight / 2,
+            width: nextWidth,
+            height: nextHeight
+        });
+
+        applyFixedCropBox();
+        schedulePreviewRender();
+    });
+
     window.addEventListener('pointermove', (event) => {
+        if (state.sidePanelDragState) {
+            event.preventDefault();
+            const left = event.clientX - state.sidePanelDragState.offsetX;
+            const top = event.clientY - state.sidePanelDragState.offsetY;
+            setSidePanelPosition(left, top);
+            return;
+        }
+
         if (!state.previewDragState) {
             return;
         }
@@ -345,10 +438,14 @@ function bindWindowInteractions() {
     });
 
     window.addEventListener('pointerup', () => {
+        state.sidePanelDragState = null;
+        refs.sidePanel?.classList.remove('dragging');
         stopPreviewDrag();
     });
 
     window.addEventListener('pointercancel', () => {
+        state.sidePanelDragState = null;
+        refs.sidePanel?.classList.remove('dragging');
         stopPreviewDrag();
     });
 }
@@ -371,6 +468,7 @@ function initialize() {
     state.targetHeight = Number.parseInt(refs.heightInput.value, 10) || 0;
     updateOverlayMask(0, 0);
     setFloatingPreviewPosition(state.previewPosition.left, state.previewPosition.top);
+    initializeSidePanelPosition();
 }
 
 initialize();

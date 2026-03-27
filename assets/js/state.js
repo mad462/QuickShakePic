@@ -1,4 +1,6 @@
-﻿export const refs = {
+export const refs = {
+    sidePanel: document.getElementById('sidePanel'),
+    sidePanelDragHandle: document.getElementById('sidePanelDragHandle'),
     dropZone: document.getElementById('dropZone'),
     pickFileBtn: document.getElementById('pickFileBtn'),
     fileInput: document.getElementById('fileInput'),
@@ -59,6 +61,8 @@ export const state = {
     previewRenderTimer: null,
     previewDragState: null,
     previewPosition: { left: 18, top: 18 },
+    sidePanelDragState: null,
+    sidePanelPosition: null,
     snapState: {
         horizontal: null,
         vertical: null
@@ -73,8 +77,8 @@ export const state = {
 };
 
 export const constants = {
-    WEAK_SNAP_THRESHOLD: 10,
-    WEAK_SNAP_RELEASE_THRESHOLD: 22,
+    WEAK_SNAP_THRESHOLD: 6,
+    WEAK_SNAP_RELEASE_THRESHOLD: 6,
     PRESET_CUSTOM_VALUE: 'custom',
     PRESET_MANAGE_VALUE: '__manage_presets__',
     PRESET_STORAGE_KEY: 'quickshakepic.presets.v1'
