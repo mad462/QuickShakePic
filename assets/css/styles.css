@@ -153,6 +153,11 @@
             cursor: grabbing;
         }
 
+        .editor-stage.eyedropper-cursor,
+        .editor-stage.eyedropper-cursor * {
+            cursor: crosshair !important;
+        }
+
         .drop-zone,
         .crop-workspace {
             position: absolute;

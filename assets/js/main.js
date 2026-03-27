@@ -11,6 +11,7 @@ import {
     exportBMP,
     getClipboardImageFile,
     loadImage,
+    pickBackgroundColor,
     resetEditor,
     schedulePreviewRender,
     setBackgroundColor,
@@ -32,6 +33,166 @@ import {
     selectCustomPreset
 } from './preset-manager.js';
 import { normalizeHexColor } from './utils.js';
+
+const HISTORY_LIMIT = 80;
+
+function isTypingElement(target) {
+    return Boolean(target) && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+    );
+}
+
+function getHistorySnapshot() {
+    const canvasData = state.cropper?.getCanvasData() || null;
+    return {
+        widthInput: refs.widthInput.value || '',
+        heightInput: refs.heightInput.value || '',
+        activePresetId: state.activePresetId || '',
+        targetWidth: Number(state.targetWidth) || 0,
+        targetHeight: Number(state.targetHeight) || 0,
+        previewMode: state.previewMode,
+        ditherEnabled: Boolean(refs.ditherEnabledInput.checked),
+        palette: refs.paletteSelect.value || '4-color.act',
+        backgroundColor: refs.backgroundColorInput.value || '#FFFFFF',
+        backgroundHex: refs.backgroundHexInput.value || '#FFFFFF',
+        showOuterMask: Boolean(refs.showOuterMaskInput?.checked ?? true),
+        adjustmentState: {
+            exposure: Number(state.adjustmentState.exposure) || 0,
+            contrast: Number(state.adjustmentState.contrast) || 0,
+            saturation: Number(state.adjustmentState.saturation) || 0
+        },
+        currentRotation: Number(state.currentRotation) || 0,
+        scaleX: Number(state.scaleX) || 1,
+        scaleY: Number(state.scaleY) || 1,
+        canvasData: canvasData
+            ? {
+                left: Number(canvasData.left) || 0,
+                top: Number(canvasData.top) || 0,
+                width: Number(canvasData.width) || 0,
+                height: Number(canvasData.height) || 0
+            }
+            : null
+    };
+}
+
+function isSameHistorySnapshot(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function pushHistorySnapshot() {
+    if (state.isApplyingHistory) {
+        return;
+    }
+    const snapshot = getHistorySnapshot();
+    const current = state.historyStack[state.historyIndex];
+    if (current && isSameHistorySnapshot(current, snapshot)) {
+        return;
+    }
+    const nextStack = state.historyStack.slice(0, state.historyIndex + 1);
+    nextStack.push(snapshot);
+    if (nextStack.length > HISTORY_LIMIT) {
+        nextStack.shift();
+    }
+    state.historyStack = nextStack;
+    state.historyIndex = nextStack.length - 1;
+}
+
+function applyHistorySnapshot(snapshot) {
+    if (!snapshot) {
+        return;
+    }
+    state.isApplyingHistory = true;
+
+    refs.widthInput.value = snapshot.widthInput;
+    refs.heightInput.value = snapshot.heightInput;
+    state.targetWidth = snapshot.targetWidth;
+    state.targetHeight = snapshot.targetHeight;
+    state.activePresetId = snapshot.activePresetId || null;
+    refs.presetSizeSelect.value = snapshot.activePresetId || '';
+    updateCustomSizeVisibility();
+
+    state.previewMode = snapshot.previewMode === 'fit' ? 'fit' : 'actual';
+    refs.ditherEnabledInput.checked = Boolean(snapshot.ditherEnabled);
+    refs.paletteSelect.value = snapshot.palette || refs.paletteSelect.value;
+    refs.showOuterMaskInput.checked = Boolean(snapshot.showOuterMask);
+    state.showOuterMask = Boolean(snapshot.showOuterMask);
+    updateOverlayVisibility();
+
+    setBackgroundColor(snapshot.backgroundColor || '#FFFFFF');
+    refs.backgroundHexInput.value = (snapshot.backgroundHex || '#FFFFFF').toUpperCase();
+
+    state.adjustmentState.exposure = Number(snapshot.adjustmentState?.exposure) || 0;
+    state.adjustmentState.contrast = Number(snapshot.adjustmentState?.contrast) || 0;
+    state.adjustmentState.saturation = Number(snapshot.adjustmentState?.saturation) || 0;
+    syncAdjustmentInputs();
+    updateAdjustmentValueLabels();
+    updateAdjustmentPreview();
+
+    state.currentRotation = Number(snapshot.currentRotation) || 0;
+    state.scaleX = Number(snapshot.scaleX) || 1;
+    state.scaleY = Number(snapshot.scaleY) || 1;
+
+    if (state.cropper && state.targetWidth > 0 && state.targetHeight > 0) {
+        state.cropper.setAspectRatio(state.targetWidth / state.targetHeight);
+        applyFixedCropBox(state.previewMode === 'actual');
+        if (snapshot.canvasData) {
+            state.cropper.setCanvasData(snapshot.canvasData);
+        }
+    }
+
+    updateInfo();
+    updatePreviewCanvasPresentation();
+    updateDitherUIState();
+    schedulePreviewRender();
+    persistUserSettings();
+    state.isApplyingHistory = false;
+}
+
+function undoHistory() {
+    if (state.historyIndex <= 0) {
+        return;
+    }
+    state.historyIndex -= 1;
+    applyHistorySnapshot(state.historyStack[state.historyIndex]);
+}
+
+function redoHistory() {
+    if (state.historyIndex >= state.historyStack.length - 1) {
+        return;
+    }
+    state.historyIndex += 1;
+    applyHistorySnapshot(state.historyStack[state.historyIndex]);
+}
+
+async function triggerBackgroundEyedropperFromShortcut() {
+    if (!window.EyeDropper) {
+        refs.backgroundColorInput.click();
+        return;
+    }
+
+    refs.editorStage?.classList.add('eyedropper-cursor');
+    state.isColorPicking = true;
+    state.suppressDitherPreview = true;
+    updateOverlayVisibility();
+    updateDitherUIState();
+    schedulePreviewRender();
+
+    try {
+        await pickBackgroundColor();
+    } finally {
+        refs.editorStage?.classList.remove('eyedropper-cursor');
+        state.isColorPicking = false;
+        state.suppressDitherPreview = false;
+        updateOverlayVisibility();
+        updateDitherUIState();
+        schedulePreviewRender();
+        persistUserSettings();
+        pushHistorySnapshot();
+    }
+}
 
 function clampSidePanelPosition(left, top) {
     if (!refs.sidePanel) {
@@ -180,10 +341,12 @@ function bindFileInteractions() {
         event.preventDefault();
         refs.dropZone.classList.remove('drag-over');
         loadImage(event.dataTransfer.files[0]);
+        window.setTimeout(pushHistorySnapshot, 260);
     });
 
     refs.fileInput.addEventListener('change', (event) => {
         loadImage(event.target.files[0]);
+        window.setTimeout(pushHistorySnapshot, 260);
     });
 
     document.addEventListener('paste', (event) => {
@@ -204,6 +367,7 @@ function bindFileInteractions() {
 
         event.preventDefault();
         loadImage(imageFile);
+        window.setTimeout(pushHistorySnapshot, 260);
     });
 }
 
@@ -222,11 +386,13 @@ function bindResolutionControls() {
         if (!value) {
             selectCustomPreset();
             persistUserSettings();
+            pushHistorySnapshot();
             return;
         }
 
         applyPresetSelection(value);
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.swapDimensionsBtn.addEventListener('click', () => {
@@ -253,24 +419,29 @@ function bindResolutionControls() {
                 updateInfo();
             }
             updateCustomSizeVisibility();
+            persistUserSettings();
+            pushHistorySnapshot();
             return;
         }
 
         syncPresetSelection();
         tryAutoApplyResolution();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.widthInput.addEventListener('input', () => {
         syncPresetSelection();
         tryAutoApplyResolution();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.heightInput.addEventListener('input', () => {
         syncPresetSelection();
         tryAutoApplyResolution();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 }
 
@@ -278,6 +449,7 @@ function bindAdjustmentControls() {
     refs.backgroundColorInput.addEventListener('input', () => {
         setBackgroundColor(refs.backgroundColorInput.value);
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.backgroundHexInput.addEventListener('input', () => {
@@ -287,29 +459,34 @@ function bindAdjustmentControls() {
             refs.backgroundHexInput.value = normalized;
             schedulePreviewRender();
             persistUserSettings();
+            pushHistorySnapshot();
         }
     });
 
     refs.backgroundHexInput.addEventListener('blur', () => {
         refs.backgroundHexInput.value = refs.backgroundColorInput.value.toUpperCase();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.ditherEnabledInput.addEventListener('change', () => {
         updateDitherUIState();
         schedulePreviewRender();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.showOuterMaskInput?.addEventListener('change', () => {
         state.showOuterMask = refs.showOuterMaskInput.checked;
         updateOverlayVisibility();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.backgroundColorInput.addEventListener('pointerdown', () => {
         state.isColorPicking = true;
         state.suppressDitherPreview = true;
+        refs.editorStage?.classList.add('eyedropper-cursor');
         updateOverlayVisibility();
         updateDitherUIState();
         schedulePreviewRender();
@@ -317,6 +494,7 @@ function bindAdjustmentControls() {
     refs.backgroundColorInput.addEventListener('change', () => {
         state.isColorPicking = false;
         state.suppressDitherPreview = false;
+        refs.editorStage?.classList.remove('eyedropper-cursor');
         updateOverlayVisibility();
         updateDitherUIState();
         schedulePreviewRender();
@@ -324,6 +502,7 @@ function bindAdjustmentControls() {
     refs.backgroundColorInput.addEventListener('blur', () => {
         state.isColorPicking = false;
         state.suppressDitherPreview = false;
+        refs.editorStage?.classList.remove('eyedropper-cursor');
         updateOverlayVisibility();
         updateDitherUIState();
         schedulePreviewRender();
@@ -362,11 +541,13 @@ function bindAdjustmentControls() {
         updateDitherUIState();
         schedulePreviewRender();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.paletteSelect.addEventListener('change', () => {
         schedulePreviewRender();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.exposureInput.addEventListener('input', () => {
@@ -375,6 +556,7 @@ function bindAdjustmentControls() {
         updateAdjustmentPreview();
         schedulePreviewRender();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.contrastInput.addEventListener('input', () => {
@@ -383,6 +565,7 @@ function bindAdjustmentControls() {
         updateAdjustmentPreview();
         schedulePreviewRender();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.saturationInput.addEventListener('input', () => {
@@ -391,19 +574,27 @@ function bindAdjustmentControls() {
         updateAdjustmentPreview();
         schedulePreviewRender();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 
     refs.resetAdjustmentsBtn.addEventListener('click', () => {
         resetAdjustments();
         schedulePreviewRender();
         persistUserSettings();
+        pushHistorySnapshot();
     });
 }
 
 function bindEditorActions() {
     refs.exportBtn.addEventListener('click', exportBMP);
-    refs.resetBtn.addEventListener('click', resetEditor);
-    refs.newImageBtn.addEventListener('click', clearAll);
+    refs.resetBtn.addEventListener('click', () => {
+        resetEditor();
+        pushHistorySnapshot();
+    });
+    refs.newImageBtn.addEventListener('click', () => {
+        clearAll();
+        pushHistorySnapshot();
+    });
 
     refs.rotateLeftBtn.addEventListener('click', () => {
         if (!state.cropper) {
@@ -415,6 +606,7 @@ function bindEditorActions() {
         applyFixedCropBox();
         updateInfo();
         schedulePreviewRender();
+        pushHistorySnapshot();
     });
 
     refs.rotateRightBtn.addEventListener('click', () => {
@@ -427,6 +619,7 @@ function bindEditorActions() {
         applyFixedCropBox();
         updateInfo();
         schedulePreviewRender();
+        pushHistorySnapshot();
     });
 
     refs.flipHBtn.addEventListener('click', () => {
@@ -438,6 +631,7 @@ function bindEditorActions() {
         state.cropper.scaleX(state.scaleX);
         applyFixedCropBox();
         schedulePreviewRender();
+        pushHistorySnapshot();
     });
 
     refs.flipVBtn.addEventListener('click', () => {
@@ -449,18 +643,85 @@ function bindEditorActions() {
         state.cropper.scaleY(state.scaleY);
         applyFixedCropBox();
         schedulePreviewRender();
+        pushHistorySnapshot();
     });
 
 }
 
 function bindKeyboardShortcuts() {
-    document.addEventListener('keydown', (event) => {
+    const handleGlobalShortcuts = (event) => {
+        const key = event.key.toLowerCase();
+        const isMod = event.ctrlKey || event.metaKey;
+
+        if (!isMod) {
+            return false;
+        }
+
         const activeElement = document.activeElement;
-        const isTypingTarget = activeElement &&
-            (activeElement.tagName === 'INPUT' ||
-                activeElement.tagName === 'TEXTAREA' ||
-                activeElement.tagName === 'SELECT' ||
-                activeElement.isContentEditable);
+        const isTypingTarget = isTypingElement(activeElement);
+
+        if (key === 's') {
+            event.preventDefault();
+            event.stopPropagation();
+            exportBMP();
+            return true;
+        }
+
+        if (key === 'n') {
+            event.preventDefault();
+            event.stopPropagation();
+            clearAll();
+            pushHistorySnapshot();
+            return true;
+        }
+
+        if (key === 'b') {
+            event.preventDefault();
+            event.stopPropagation();
+            triggerBackgroundEyedropperFromShortcut();
+            return true;
+        }
+
+        if (key === 'z') {
+            if (isTypingTarget) {
+                return false;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.shiftKey) {
+                redoHistory();
+            } else {
+                undoHistory();
+            }
+            return true;
+        }
+
+        if (key === 'y') {
+            if (isTypingTarget) {
+                return false;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            redoHistory();
+            return true;
+        }
+
+        return false;
+    };
+
+    // Capture stage interception to beat browser defaults like Ctrl+N.
+    window.addEventListener('keydown', (event) => {
+        handleGlobalShortcuts(event);
+    }, true);
+
+    document.addEventListener('keydown', (event) => {
+        if (handleGlobalShortcuts(event)) {
+            return;
+        }
+
+        const activeElement = document.activeElement;
+        const isTypingTarget = isTypingElement(activeElement);
+        const key = event.key.toLowerCase();
 
         if (event.code === 'Space') {
             if (isTypingTarget) {
@@ -486,11 +747,10 @@ function bindKeyboardShortcuts() {
             return;
         }
 
-        const key = event.key.toLowerCase();
-
         if ((event.ctrlKey || event.metaKey) && key === 'r') {
             event.preventDefault();
             resetEditor();
+            pushHistorySnapshot();
             return;
         }
 
@@ -499,6 +759,7 @@ function bindKeyboardShortcuts() {
             state.cropper.zoom(0.1);
             applyFixedCropBox();
             schedulePreviewRender();
+            pushHistorySnapshot();
             return;
         }
 
@@ -507,6 +768,7 @@ function bindKeyboardShortcuts() {
             state.cropper.zoom(-0.1);
             applyFixedCropBox();
             schedulePreviewRender();
+            pushHistorySnapshot();
             return;
         }
 
@@ -528,6 +790,7 @@ function bindKeyboardShortcuts() {
 
         applyFixedCropBox();
         schedulePreviewRender();
+        pushHistorySnapshot();
     });
 
     document.addEventListener('keyup', (event) => {
@@ -709,6 +972,9 @@ function bindWindowInteractions() {
         state.sidePanelDragState = null;
         refs.sidePanel?.classList.remove('dragging');
         stopPreviewDrag();
+        if (state.cropper) {
+            pushHistorySnapshot();
+        }
     });
 
     window.addEventListener('pointercancel', () => {
@@ -770,6 +1036,7 @@ function initialize() {
     initializeSidePanelPosition();
     setWorkspacePanOffset(0, 0);
     persistUserSettings();
+    pushHistorySnapshot();
 }
 
 initialize();

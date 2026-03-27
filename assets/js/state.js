@@ -72,6 +72,9 @@ export const state = {
     workspacePanOffset: { x: 0, y: 0 },
     sidePanelDragState: null,
     sidePanelPosition: null,
+    historyStack: [],
+    historyIndex: -1,
+    isApplyingHistory: false,
     snapState: {
         horizontal: null,
         vertical: null
