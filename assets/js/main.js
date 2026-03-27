@@ -45,6 +45,15 @@ function isTypingElement(target) {
     );
 }
 
+function syncOuterMaskWithPreviewMode() {
+    const shouldShowOuterMask = state.previewMode === 'fit';
+    state.showOuterMask = shouldShowOuterMask;
+    if (refs.showOuterMaskInput) {
+        refs.showOuterMaskInput.checked = shouldShowOuterMask;
+    }
+    updateOverlayVisibility();
+}
+
 function getHistorySnapshot() {
     const canvasData = state.cropper?.getCanvasData() || null;
     return {
@@ -119,10 +128,7 @@ function applyHistorySnapshot(snapshot) {
         refs.ditherEnabledInput.checked = Boolean(snapshot.ditherEnabled) && snapshot.palette !== '__none__';
     }
     refs.paletteSelect.value = snapshot.palette || refs.paletteSelect.value;
-    refs.showOuterMaskInput.checked = Boolean(snapshot.showOuterMask);
-    state.showOuterMask = Boolean(snapshot.showOuterMask);
-    refs.showOuterMaskBtn?.classList.toggle('is-active', state.showOuterMask);
-    updateOverlayVisibility();
+    syncOuterMaskWithPreviewMode();
 
     setBackgroundColor(snapshot.backgroundColor || '#FFFFFF');
     if (refs.backgroundHexInput) {
@@ -310,11 +316,7 @@ function loadUserSettings() {
                 refs.backgroundHexInput.value = normalizedHex;
             }
         }
-        if (typeof parsed.showOuterMask === 'boolean' && refs.showOuterMaskInput) {
-            refs.showOuterMaskInput.checked = parsed.showOuterMask;
-            state.showOuterMask = parsed.showOuterMask;
-            updateOverlayVisibility();
-        }
+        // showOuterMask is now controlled by preview mode automatically
         if (parsed.palette) {
             refs.paletteSelect.value = parsed.palette;
         }
@@ -335,6 +337,18 @@ function loadUserSettings() {
 }
 
 function bindFileInteractions() {
+    const normalizeResolutionForImport = () => {
+        if (state.activePresetId) {
+            return;
+        }
+        const fallbackPreset = state.presetConfigs[0];
+        if (!fallbackPreset?.id) {
+            return;
+        }
+        applyPresetSelection(fallbackPreset.id);
+        persistUserSettings();
+    };
+
     refs.pickFileBtn.addEventListener('click', () => refs.fileInput.click());
 
     refs.dropZone.addEventListener('dragover', (event) => {
@@ -349,11 +363,13 @@ function bindFileInteractions() {
     refs.dropZone.addEventListener('drop', (event) => {
         event.preventDefault();
         refs.dropZone.classList.remove('drag-over');
+        normalizeResolutionForImport();
         loadImage(event.dataTransfer.files[0]);
         window.setTimeout(pushHistorySnapshot, 260);
     });
 
     refs.fileInput.addEventListener('change', (event) => {
+        normalizeResolutionForImport();
         loadImage(event.target.files[0]);
         window.setTimeout(pushHistorySnapshot, 260);
     });
@@ -375,6 +391,7 @@ function bindFileInteractions() {
         }
 
         event.preventDefault();
+        normalizeResolutionForImport();
         loadImage(imageFile);
         window.setTimeout(pushHistorySnapshot, 260);
     });
@@ -488,25 +505,6 @@ function bindAdjustmentControls() {
         pushHistorySnapshot();
     });
 
-    refs.showOuterMaskInput?.addEventListener('change', () => {
-        state.showOuterMask = refs.showOuterMaskInput.checked;
-        updateOverlayVisibility();
-        refs.showOuterMaskBtn?.classList.toggle('is-active', state.showOuterMask);
-        persistUserSettings();
-        pushHistorySnapshot();
-    });
-
-    refs.showOuterMaskBtn?.addEventListener('click', () => {
-        state.showOuterMask = !state.showOuterMask;
-        if (refs.showOuterMaskInput) {
-            refs.showOuterMaskInput.checked = state.showOuterMask;
-        }
-        updateOverlayVisibility();
-        refs.showOuterMaskBtn?.classList.toggle('is-active', state.showOuterMask);
-        persistUserSettings();
-        pushHistorySnapshot();
-    });
-
     refs.backgroundColorInput.addEventListener('pointerdown', () => {
         state.isColorPicking = true;
         state.suppressDitherPreview = true;
@@ -539,6 +537,7 @@ function bindAdjustmentControls() {
         const prevCropBoxData = state.cropper ? state.cropper.getCropBoxData() : null;
         const prevCanvasData = state.cropper ? state.cropper.getCanvasData() : null;
         state.previewMode = nextMode;
+        syncOuterMaskWithPreviewMode();
         if (state.cropper) {
             applyFixedCropBox(state.previewMode === 'actual');
 
@@ -683,7 +682,12 @@ function bindEditorActions() {
 }
 
 function bindKeyboardShortcuts() {
+    const HANDLED_SHORTCUT_FLAG = '__qspShortcutHandled';
+
     const handleGlobalShortcuts = (event) => {
+        if (event[HANDLED_SHORTCUT_FLAG]) {
+            return true;
+        }
         const key = event.key.toLowerCase();
         const isMod = event.ctrlKey || event.metaKey;
 
@@ -695,23 +699,32 @@ function bindKeyboardShortcuts() {
         const isTypingTarget = isTypingElement(activeElement);
 
         if (key === 's') {
+            event[HANDLED_SHORTCUT_FLAG] = true;
             event.preventDefault();
             event.stopPropagation();
+            event.stopImmediatePropagation();
+            event.returnValue = false;
             exportBMP();
             return true;
         }
 
         if (key === 'n') {
+            event[HANDLED_SHORTCUT_FLAG] = true;
             event.preventDefault();
             event.stopPropagation();
+            event.stopImmediatePropagation();
+            event.returnValue = false;
             clearAll();
             pushHistorySnapshot();
             return true;
         }
 
         if (key === 'b') {
+            event[HANDLED_SHORTCUT_FLAG] = true;
             event.preventDefault();
             event.stopPropagation();
+            event.stopImmediatePropagation();
+            event.returnValue = false;
             triggerBackgroundEyedropperFromShortcut();
             return true;
         }
@@ -720,8 +733,11 @@ function bindKeyboardShortcuts() {
             if (isTypingTarget) {
                 return false;
             }
+            event[HANDLED_SHORTCUT_FLAG] = true;
             event.preventDefault();
             event.stopPropagation();
+            event.stopImmediatePropagation();
+            event.returnValue = false;
             if (event.shiftKey) {
                 redoHistory();
             } else {
@@ -734,8 +750,11 @@ function bindKeyboardShortcuts() {
             if (isTypingTarget) {
                 return false;
             }
+            event[HANDLED_SHORTCUT_FLAG] = true;
             event.preventDefault();
             event.stopPropagation();
+            event.stopImmediatePropagation();
+            event.returnValue = false;
             redoHistory();
             return true;
         }
@@ -1030,14 +1049,26 @@ function suppressToolbarSpaceTrigger() {
     const shouldAllowTyping = (target) => target &&
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
 
+    const isSpaceEvent = (event) =>
+        event.code === 'Space' ||
+        event.key === ' ' ||
+        event.key === 'Spacebar' ||
+        event.keyCode === 32;
+
     const handleSpaceSuppression = (event) => {
-        if (event.code !== 'Space') {
+        if (!isSpaceEvent(event)) {
             return;
         }
         const target = event.target;
         const activeElement = document.activeElement;
         const inSidePanel = refs.sidePanel?.contains(target) || refs.sidePanel?.contains(activeElement);
-        if (!inSidePanel) {
+        const activeIsButton = activeElement?.tagName === 'BUTTON';
+        const targetIsButton = target?.tagName === 'BUTTON';
+        const toolbarInteractive = Boolean(
+            target?.closest?.('#sidePanel button, #sidePanel [role="button"], #sidePanel .icon-action, #sidePanel .mode-btn') ||
+            activeElement?.closest?.('#sidePanel button, #sidePanel [role="button"], #sidePanel .icon-action, #sidePanel .mode-btn')
+        );
+        if (!inSidePanel && !activeIsButton && !targetIsButton && !toolbarInteractive) {
             return;
         }
         if (shouldAllowTyping(target) || shouldAllowTyping(activeElement)) {
@@ -1055,8 +1086,10 @@ function suppressToolbarSpaceTrigger() {
 
     window.addEventListener('keydown', handleSpaceSuppression, true);
     window.addEventListener('keyup', handleSpaceSuppression, true);
+    window.addEventListener('keypress', handleSpaceSuppression, true);
     refs.sidePanel?.addEventListener('keydown', handleSpaceSuppression, true);
     refs.sidePanel?.addEventListener('keyup', handleSpaceSuppression, true);
+    refs.sidePanel?.addEventListener('keypress', handleSpaceSuppression, true);
 }
 
 function initialize() {
@@ -1074,12 +1107,10 @@ function initialize() {
     updateInfo();
     updateCustomSizeVisibility();
     updateDitherUIState();
-    state.showOuterMask = refs.showOuterMaskInput?.checked ?? true;
-    refs.showOuterMaskBtn?.classList.toggle('is-active', state.showOuterMask);
+    syncOuterMaskWithPreviewMode();
     if (refs.ditherEnabledInput) {
         refs.ditherEnabledInput.checked = refs.paletteSelect.value !== '__none__';
     }
-    updateOverlayVisibility();
     syncAdjustmentInputs();
     state.targetWidth = Number.parseInt(refs.widthInput.value, 10) || 0;
     state.targetHeight = Number.parseInt(refs.heightInput.value, 10) || 0;

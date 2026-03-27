@@ -43,6 +43,7 @@ export function updateCustomSizeVisibility() {
 export function updateDitherUIState() {
     const shouldShow = Boolean(state.cropper) && refs.ditherEnabledInput.checked && !state.suppressDitherPreview;
     refs.cropFramePreview.style.display = shouldShow ? 'flex' : 'none';
+    refs.editorStage?.classList.toggle('preview-actual-active', shouldShow && state.previewMode === 'actual');
     refs.previewModeActualBtn && (refs.previewModeActualBtn.disabled = !shouldShow);
     refs.previewModeFitBtn && (refs.previewModeFitBtn.disabled = !shouldShow);
     refs.previewModeActualBtn?.classList.toggle('is-active', state.previewMode === 'actual');
@@ -76,16 +77,10 @@ export function updatePreviewCanvasPresentation() {
     refs.cropFramePreview.classList.toggle('preview-fit', isFitMode);
     refs.cropFramePreview.classList.toggle('preview-actual', !isFitMode);
 
-    if (isFitMode) {
-        refs.previewCanvas.style.width = '100%';
-        refs.previewCanvas.style.height = '100%';
-        refs.previewCanvas.style.objectFit = 'cover';
-    } else {
-        // Actual-pixel preview: 1 canvas pixel = 1 CSS pixel.
-        refs.previewCanvas.style.width = `${refs.previewCanvas.width}px`;
-        refs.previewCanvas.style.height = `${refs.previewCanvas.height}px`;
-        refs.previewCanvas.style.objectFit = 'unset';
-    }
+    // Keep a single visual layer in both modes to avoid split/misalignment.
+    refs.previewCanvas.style.width = '100%';
+    refs.previewCanvas.style.height = '100%';
+    refs.previewCanvas.style.objectFit = 'cover';
     refs.previewCanvas.style.transform = 'translate3d(0, 0, 0)';
 }
 
@@ -348,19 +343,19 @@ export function initializeCropper() {
         ready() {
             state.cropper.setDragMode('move');
             clearSnapState();
-            applyFixedCropBox();
+            applyFixedCropBox(state.previewMode === 'actual');
             updateInfo();
             updateDitherUIState();
             schedulePreviewRender();
         },
         cropmove() {
             applyWeakSnap();
-            applyFixedCropBox();
+            applyFixedCropBox(state.previewMode === 'actual');
             schedulePreviewRender();
         },
         zoom() {
             requestAnimationFrame(() => {
-                applyFixedCropBox();
+                applyFixedCropBox(state.previewMode === 'actual');
                 schedulePreviewRender();
             });
         }
@@ -476,7 +471,7 @@ export function applyResolution() {
     state.targetWidth = width;
     state.targetHeight = height;
     state.cropper.setAspectRatio(state.targetWidth / state.targetHeight);
-    applyFixedCropBox();
+    applyFixedCropBox(state.previewMode === 'actual');
     syncPresetSelection();
     updateInfo();
     schedulePreviewRender();
@@ -487,7 +482,7 @@ export function getProcessedCanvas() {
         return null;
     }
 
-    applyFixedCropBox();
+    applyFixedCropBox(state.previewMode === 'actual');
 
     const canvas = state.cropper.getCroppedCanvas({
         width: state.targetWidth,
@@ -573,7 +568,7 @@ export function resetEditor() {
     if (state.targetWidth && state.targetHeight) {
         state.cropper.setAspectRatio(state.targetWidth / state.targetHeight);
     }
-    applyFixedCropBox();
+    applyFixedCropBox(state.previewMode === 'actual');
     updateInfo();
     schedulePreviewRender();
 }

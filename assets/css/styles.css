@@ -167,6 +167,10 @@ button:disabled {
   cursor: crosshair !important;
 }
 
+.editor-stage.preview-actual-active .cropper-container img {
+  opacity: 0 !important;
+}
+
 .drop-zone,
 .crop-workspace {
   position: absolute;
@@ -891,11 +895,6 @@ body.has-image .side-panel {
 .preview-mode-toggle .mode-btn.is-active {
   background: rgba(47, 184, 255, 0.16);
   border-color: rgba(115, 208, 255, 0.45);
-}
-
-#showOuterMaskBtn.is-active {
-  border-color: rgba(115, 208, 255, 0.4);
-  background: rgba(47, 184, 255, 0.16);
 }
 
 .sr-only {
