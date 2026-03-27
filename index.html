@@ -42,17 +42,14 @@
                             <div class="mask" id="maskBottom"></div>
                             <div class="mask" id="maskLeft"></div>
                             <div class="crop-frame" id="cropFrame">
+                                <div class="crop-frame-preview" id="cropFramePreview">
+                                    <canvas id="previewCanvas"></canvas>
+                                </div>
                                 <div class="crop-frame-label" id="cropFrameLabel">未设置裁剪尺寸</div>
                             </div>
                         </div>
                     </div>
                     <div class="floating-preview" id="floatingPreview">
-                        <div class="preview-head">
-                            <h3>抖动预览</h3>
-                        </div>
-                        <div class="preview-surface">
-                            <canvas id="previewCanvas"></canvas>
-                        </div>
                     </div>
                 </div>
             </section>
@@ -73,7 +70,8 @@
                             <label for="presetSize">预设尺寸</label>
                             <select id="presetSize"></select>
                         </div>
-                        <button class="compact-side-btn icon-only" type="button" id="swapDimensionsBtn" title="横竖互换" aria-label="横竖互换">⇄</button>
+                        <button class="compact-side-btn icon-only" type="button" id="swapDimensionsBtn" title="横竖互换"
+                            aria-label="横竖互换">⇄</button>
                     </div>
                     <div class="custom-size-fields" id="customSizeFields">
                         <div class="field">
@@ -90,7 +88,8 @@
                 <section class="panel-section">
                     <div class="panel-section-header">
                         <h2>图片调整</h2>
-                        <button class="section-icon-btn" type="button" id="resetBtn" title="重置图片变换" aria-label="重置图片变换">↻</button>
+                        <button class="section-icon-btn" type="button" id="resetBtn" title="重置图片变换"
+                            aria-label="重置图片变换">↻</button>
                     </div>
                     <div class="icon-button-row">
                         <button class="icon-action" type="button" id="rotateLeft" title="左旋 90°" aria-label="左旋 90°">
@@ -111,7 +110,8 @@
                 <section class="panel-section">
                     <div class="panel-section-header">
                         <h2>色彩调节</h2>
-                        <button class="section-icon-btn" type="button" id="resetAdjustmentsBtn" title="重置色彩调节" aria-label="重置色彩调节">↻</button>
+                        <button class="section-icon-btn" type="button" id="resetAdjustmentsBtn" title="重置色彩调节"
+                            aria-label="重置色彩调节">↻</button>
                     </div>
                     <div class="adjustment-stack">
                         <label class="slider-field" for="exposureInput">
@@ -144,9 +144,15 @@
                         <label for="backgroundColorInput">画布填充色</label>
                         <div class="compact-color-row">
                             <input class="color-swatch-input" type="color" id="backgroundColorInput" value="#ffffff">
-                            <input class="hex-input" type="text" id="backgroundHexInput" value="#FFFFFF" maxlength="7" spellcheck="false">
-                            <button class="compact-tool-btn" type="button" id="pickColorBtn" title="吸管取色">◉</button>
+                            <input class="hex-input" type="text" id="backgroundHexInput" value="#FFFFFF" maxlength="7"
+                                spellcheck="false">
                         </div>
+                    </div>
+                    <div class="field" style="margin-bottom: 10px;">
+                        <label class="toggle-field">
+                            <input type="checkbox" id="showOuterMask" checked>
+                            <span>显示裁剪框外内容</span>
+                        </label>
                     </div>
                     <div class="field" style="margin-bottom: 10px;">
                         <label for="ditherEnabled">抖动开关</label>
@@ -154,6 +160,9 @@
                             <input type="checkbox" id="ditherEnabled" checked>
                             <span>启用抖动处理</span>
                         </label>
+                    </div>
+                    <div class="field" style="margin-bottom: 10px;">
+                        <button class="full" type="button" id="previewModeToggleBtn">预览模式：实际像素</button>
                     </div>
                     <div class="field-grid">
                         <div class="field">
@@ -182,7 +191,8 @@
                 </div>
                 <div class="modal-header-actions">
                     <button class="modal-add-btn" type="button" id="addPresetBtn">新增尺寸</button>
-                    <button class="section-icon-btn" type="button" id="closePresetManagerBtn" title="关闭" aria-label="关闭">×</button>
+                    <button class="section-icon-btn" type="button" id="closePresetManagerBtn" title="关闭"
+                        aria-label="关闭">×</button>
                 </div>
             </div>
             <div class="preset-table">
@@ -203,13 +213,3 @@
 </body>
 
 </html>
-
-
-
-
-
-
-
-
-
-

@@ -141,6 +141,18 @@
             background-position: 0 0, 14px 14px, center;
         }
 
+        .editor-stage.has-image {
+            background: #040a12;
+        }
+
+        .editor-stage.space-pan-ready {
+            cursor: grab;
+        }
+
+        .editor-stage.space-panning {
+            cursor: grabbing;
+        }
+
         .drop-zone,
         .crop-workspace {
             position: absolute;
@@ -185,7 +197,7 @@
 
         .crop-workspace {
             display: none;
-            background: rgba(5, 14, 23, 0.8);
+            background: #040a12;
         }
 
         .crop-workspace.active {
@@ -221,17 +233,28 @@
             transform: translate(-50%, -50%);
             border: 2px solid rgba(255, 255, 255, 0.92);
             box-shadow: 0 0 0 1px rgba(115, 208, 255, 0.55), 0 0 0 9999px rgba(0, 0, 0, 0);
-            border-radius: 18px;
+            border-radius: 0;
             transition: width 0.2s ease, height 0.2s ease;
+            overflow: hidden;
+        }
+
+        .crop-frame-preview {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border-radius: 0;
+            z-index: 0;
+            cursor: default;
+            background: rgba(4, 10, 18, 0.78);
+            pointer-events: none;
         }
 
         .crop-frame::before,
         .crop-frame::after {
-            content: "";
-            position: absolute;
-            inset: 12px;
-            border: 1px dashed rgba(255, 255, 255, 0.35);
-            border-radius: 12px;
+            display: none;
         }
 
         .crop-frame-label {
@@ -247,6 +270,7 @@
             font-size: 12px;
             white-space: nowrap;
             letter-spacing: 0.04em;
+            z-index: 2;
         }
 
         .side-panel {
@@ -645,7 +669,7 @@
 
         .compact-color-row {
             display: grid;
-            grid-template-columns: 42px minmax(0, 1fr) 42px;
+            grid-template-columns: 42px minmax(0, 1fr);
             gap: 8px;
             align-items: center;
         }
@@ -796,6 +820,7 @@
             backface-visibility: hidden;
             contain: layout paint style;
             isolation: isolate;
+            display: none !important;
         }
 
         .floating-preview.visible {
@@ -836,9 +861,34 @@
 
         #previewCanvas {
             display: block;
+            image-rendering: auto;
+            pointer-events: none;
+            max-width: none;
+            max-height: none;
+        }
+
+        .preview-fit #previewCanvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            /* Photoshop-like hard-edge upscaling for dither preview */
             image-rendering: pixelated;
             image-rendering: crisp-edges;
-            pointer-events: none;
+        }
+
+        .preview-fit {
+            background: rgba(4, 10, 18, 0.78);
+        }
+
+        .preview-actual #previewCanvas {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* In actual-pixel mode, isolate the preview from underlying image
+           to avoid "split" visuals (small center block + base image). */
+        .preview-actual {
+            background: #040a12;
         }
 
         #fileInput {

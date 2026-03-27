@@ -25,7 +25,7 @@ export const refs = {
     newImageBtn: document.getElementById('newImageBtn'),
     backgroundColorInput: document.getElementById('backgroundColorInput'),
     backgroundHexInput: document.getElementById('backgroundHexInput'),
-    pickColorBtn: document.getElementById('pickColorBtn'),
+    showOuterMaskInput: document.getElementById('showOuterMask'),
     exposureInput: document.getElementById('exposureInput'),
     contrastInput: document.getElementById('contrastInput'),
     hueInput: document.getElementById('hueInput'),
@@ -36,9 +36,11 @@ export const refs = {
     saturationValue: document.getElementById('saturationValue'),
     resetAdjustmentsBtn: document.getElementById('resetAdjustmentsBtn'),
     ditherEnabledInput: document.getElementById('ditherEnabled'),
+    previewModeToggleBtn: document.getElementById('previewModeToggleBtn'),
     paletteSelect: document.getElementById('paletteSelect'),
     floatingPreview: document.getElementById('floatingPreview'),
     previewCanvas: document.getElementById('previewCanvas'),
+    cropFramePreview: document.getElementById('cropFramePreview'),
     cropFrame: document.getElementById('cropFrame'),
     cropFrameLabel: document.getElementById('cropFrameLabel'),
     maskTop: document.getElementById('maskTop'),
@@ -61,6 +63,13 @@ export const state = {
     previewRenderTimer: null,
     previewDragState: null,
     previewPosition: { left: 18, top: 18 },
+    previewMode: 'actual',
+    showOuterMask: true,
+    isColorPicking: false,
+    suppressDitherPreview: false,
+    isSpacePressed: false,
+    workspacePanState: null,
+    workspacePanOffset: { x: 0, y: 0 },
     sidePanelDragState: null,
     sidePanelPosition: null,
     snapState: {
@@ -81,7 +90,8 @@ export const constants = {
     WEAK_SNAP_RELEASE_THRESHOLD: 6,
     PRESET_CUSTOM_VALUE: 'custom',
     PRESET_MANAGE_VALUE: '__manage_presets__',
-    PRESET_STORAGE_KEY: 'quickshakepic.presets.v1'
+    PRESET_STORAGE_KEY: 'quickshakepic.presets.v1',
+    USER_SETTINGS_STORAGE_KEY: 'quickshakepic.settings.v1'
 };
 
 export const PALETTE_PRESETS = {

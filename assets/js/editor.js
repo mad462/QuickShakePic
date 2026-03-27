@@ -26,6 +26,7 @@ export function getTargetAspectRatio() {
 export function setWorkspaceState(hasImage) {
     refs.dropZone.style.display = hasImage ? 'none' : 'flex';
     refs.cropWorkspace.classList.toggle('active', hasImage);
+    refs.editorStage.classList.toggle('has-image', hasImage);
 }
 
 export function updateInfo() {
@@ -39,9 +40,52 @@ export function updateCustomSizeVisibility() {
 }
 
 export function updateDitherUIState() {
-    const shouldShow = Boolean(state.cropper) && refs.ditherEnabledInput.checked;
-    refs.floatingPreview.classList.toggle('visible', shouldShow);
+    const shouldShow = Boolean(state.cropper) && refs.ditherEnabledInput.checked && !state.suppressDitherPreview;
+    refs.cropFramePreview.style.display = shouldShow ? 'flex' : 'none';
+    if (refs.previewModeToggleBtn) {
+        refs.previewModeToggleBtn.disabled = !shouldShow;
+        refs.previewModeToggleBtn.textContent = `预览模式：${state.previewMode === 'actual' ? '实际像素' : '适合视图'}`;
+    }
     refs.exportBtn.textContent = refs.ditherEnabledInput.checked ? '导出8bitBMP' : '导出24bitBMP';
+}
+
+export function updateOverlayVisibility() {
+    let maskOpacity = '1';
+    let maskColor = 'rgba(4, 10, 18, 0.62)';
+
+    if (state.isColorPicking) {
+        maskOpacity = '0';
+    } else if (!state.showOuterMask) {
+        // Hide outside content completely.
+        maskColor = '#040a12';
+    }
+
+    refs.maskTop.style.opacity = maskOpacity;
+    refs.maskRight.style.opacity = maskOpacity;
+    refs.maskBottom.style.opacity = maskOpacity;
+    refs.maskLeft.style.opacity = maskOpacity;
+    refs.maskTop.style.background = maskColor;
+    refs.maskRight.style.background = maskColor;
+    refs.maskBottom.style.background = maskColor;
+    refs.maskLeft.style.background = maskColor;
+}
+
+export function updatePreviewCanvasPresentation() {
+    const isFitMode = state.previewMode === 'fit';
+    refs.cropFramePreview.classList.toggle('preview-fit', isFitMode);
+    refs.cropFramePreview.classList.toggle('preview-actual', !isFitMode);
+
+    if (isFitMode) {
+        refs.previewCanvas.style.width = '100%';
+        refs.previewCanvas.style.height = '100%';
+        refs.previewCanvas.style.objectFit = 'cover';
+    } else {
+        // Actual-pixel preview: 1 canvas pixel = 1 CSS pixel.
+        refs.previewCanvas.style.width = `${refs.previewCanvas.width}px`;
+        refs.previewCanvas.style.height = `${refs.previewCanvas.height}px`;
+        refs.previewCanvas.style.objectFit = 'unset';
+    }
+    refs.previewCanvas.style.transform = 'translate3d(0, 0, 0)';
 }
 
 export function setBackgroundColor(color) {
@@ -57,6 +101,9 @@ export function setBackgroundColor(color) {
 }
 
 export function clampFloatingPreviewPosition(left, top) {
+    if (!refs.floatingPreview) {
+        return { left: 12, top: 12 };
+    }
     const previewRect = refs.floatingPreview.getBoundingClientRect();
     const maxLeft = Math.max(window.innerWidth - previewRect.width - 12, 12);
     const maxTop = Math.max(window.innerHeight - previewRect.height - 12, 12);
@@ -68,6 +115,9 @@ export function clampFloatingPreviewPosition(left, top) {
 }
 
 export function setFloatingPreviewPosition(left, top) {
+    if (!refs.floatingPreview) {
+        return;
+    }
     const clamped = clampFloatingPreviewPosition(left, top);
     state.previewPosition = clamped;
     refs.floatingPreview.style.transform = `translate3d(${clamped.left}px, ${clamped.top}px, 0)`;
@@ -99,6 +149,7 @@ export function updateOverlayMask(frameWidth, frameHeight) {
     refs.maskRight.style.top = `${Math.max(top, 0)}px`;
     refs.maskRight.style.width = `${Math.max(stageRect.width - right, 0)}px`;
     refs.maskRight.style.height = `${Math.max(frameHeight, 0)}px`;
+    updateOverlayVisibility();
 }
 
 export function getFixedCropBoxSize() {
@@ -106,6 +157,18 @@ export function getFixedCropBoxSize() {
     const maxWidth = Math.max(stageRect.width - 80, 120);
     const maxHeight = Math.max(stageRect.height - 110, 120);
     const aspectRatio = getTargetAspectRatio();
+
+    if (
+        state.previewMode === 'actual' &&
+        state.targetWidth > 0 &&
+        state.targetHeight > 0 &&
+        refs.ditherEnabledInput?.checked
+    ) {
+        return {
+            width: Math.max(80, Math.round(state.targetWidth)),
+            height: Math.max(80, Math.round(state.targetHeight))
+        };
+    }
 
     let width = maxWidth;
     let height = width / aspectRatio;
@@ -115,13 +178,15 @@ export function getFixedCropBoxSize() {
         width = height * aspectRatio;
     }
 
+    // Keep strict aspect ratio to avoid tiny black gutters in preview
+    // when switching orientation (contain mode is sensitive to ratio drift).
     return {
-        width: Math.max(80, Math.round(width)),
-        height: Math.max(80, Math.round(height))
+        width: Math.max(80, width),
+        height: Math.max(80, height)
     };
 }
 
-export function applyFixedCropBox() {
+export function applyFixedCropBox(shouldFitCanvas = false) {
     if (!state.cropper) {
         updateOverlayMask(0, 0);
         return;
@@ -139,6 +204,32 @@ export function applyFixedCropBox() {
         width,
         height
     });
+
+    if (shouldFitCanvas) {
+        const canvasData = state.cropper.getCanvasData();
+        const cropBoxData = state.cropper.getCropBoxData();
+        if (canvasData && cropBoxData && canvasData.width > 0 && canvasData.height > 0) {
+            const scaleFactor = Math.max(
+                cropBoxData.width / canvasData.width,
+                cropBoxData.height / canvasData.height,
+                1
+            );
+
+            if (scaleFactor > 1.0001) {
+                const nextWidth = canvasData.width * scaleFactor;
+                const nextHeight = canvasData.height * scaleFactor;
+                const cropCenterX = cropBoxData.left + cropBoxData.width / 2;
+                const cropCenterY = cropBoxData.top + cropBoxData.height / 2;
+
+                state.cropper.setCanvasData({
+                    left: cropCenterX - nextWidth / 2,
+                    top: cropCenterY - nextHeight / 2,
+                    width: nextWidth,
+                    height: nextHeight
+                });
+            }
+        }
+    }
 
     refs.cropFrame.style.width = `${width}px`;
     refs.cropFrame.style.height = `${height}px`;
@@ -532,9 +623,8 @@ export function renderPreview() {
     const processed = quantizeCanvasToIndexed(canvas, refs.paletteSelect.value);
     refs.previewCanvas.width = processed.width;
     refs.previewCanvas.height = processed.height;
-    refs.previewCanvas.style.width = `${processed.width}px`;
-    refs.previewCanvas.style.height = `${processed.height}px`;
     refs.previewCanvas.getContext('2d').putImageData(processed.imageData, 0, 0);
+    updatePreviewCanvasPresentation();
 }
 
 export function schedulePreviewRender() {
@@ -544,7 +634,7 @@ export function schedulePreviewRender() {
 
 export function stopPreviewDrag() {
     state.previewDragState = null;
-    refs.floatingPreview.classList.remove('dragging');
+    refs.floatingPreview?.classList.remove('dragging');
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
 }

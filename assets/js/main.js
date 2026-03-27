@@ -11,7 +11,6 @@ import {
     exportBMP,
     getClipboardImageFile,
     loadImage,
-    pickBackgroundColor,
     resetEditor,
     schedulePreviewRender,
     setBackgroundColor,
@@ -20,6 +19,8 @@ import {
     syncPresetSelection,
     tryAutoApplyResolution,
     updateCustomSizeVisibility,
+    updateOverlayVisibility,
+    updatePreviewCanvasPresentation,
     updateDitherUIState,
     updateInfo,
     updateOverlayMask
@@ -66,6 +67,101 @@ function initializeSidePanelPosition() {
     const panelRect = refs.sidePanel.getBoundingClientRect();
     const initialLeft = Math.max(window.innerWidth - panelRect.width - 18, 12);
     setSidePanelPosition(initialLeft, 18);
+}
+
+function setWorkspacePanOffset(left, top) {
+    state.workspacePanOffset = { x: left, y: top };
+    if (refs.cropWorkspace) {
+        refs.cropWorkspace.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+    }
+}
+
+function persistUserSettings() {
+    const payload = {
+        activePresetId: state.activePresetId || '',
+        width: refs.widthInput.value || '',
+        height: refs.heightInput.value || '',
+        backgroundColor: refs.backgroundColorInput.value || '#FFFFFF',
+        backgroundHex: refs.backgroundHexInput.value || '#FFFFFF',
+        showOuterMask: Boolean(refs.showOuterMaskInput?.checked ?? true),
+        ditherEnabled: Boolean(refs.ditherEnabledInput.checked),
+        palette: refs.paletteSelect.value || '4-color.act',
+        previewMode: state.previewMode,
+        adjustmentState: {
+            exposure: state.adjustmentState.exposure,
+            contrast: state.adjustmentState.contrast,
+            saturation: state.adjustmentState.saturation
+        }
+    };
+
+    localStorage.setItem(constants.USER_SETTINGS_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function loadUserSettings() {
+    try {
+        const raw = localStorage.getItem(constants.USER_SETTINGS_STORAGE_KEY);
+        if (!raw) {
+            return;
+        }
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') {
+            return;
+        }
+
+        const storedWidth = parsed.width || '';
+        const storedHeight = parsed.height || '';
+
+        if (parsed.activePresetId) {
+            applyPresetSelection(parsed.activePresetId);
+            const currentPresetWidth = refs.widthInput.value || '';
+            const currentPresetHeight = refs.heightInput.value || '';
+            if (
+                (storedWidth && storedHeight) &&
+                (storedWidth !== currentPresetWidth || storedHeight !== currentPresetHeight)
+            ) {
+                refs.widthInput.value = storedWidth;
+                refs.heightInput.value = storedHeight;
+                selectCustomPreset();
+                tryAutoApplyResolution();
+            }
+        } else if (storedWidth || storedHeight) {
+            refs.widthInput.value = storedWidth;
+            refs.heightInput.value = storedHeight;
+            selectCustomPreset();
+            tryAutoApplyResolution();
+        }
+
+        if (parsed.backgroundColor) {
+            setBackgroundColor(parsed.backgroundColor);
+        }
+        if (parsed.backgroundHex) {
+            const normalizedHex = normalizeHexColor(parsed.backgroundHex);
+            if (normalizedHex) {
+                refs.backgroundHexInput.value = normalizedHex;
+            }
+        }
+        if (typeof parsed.ditherEnabled === 'boolean') {
+            refs.ditherEnabledInput.checked = parsed.ditherEnabled;
+        }
+        if (typeof parsed.showOuterMask === 'boolean' && refs.showOuterMaskInput) {
+            refs.showOuterMaskInput.checked = parsed.showOuterMask;
+            state.showOuterMask = parsed.showOuterMask;
+            updateOverlayVisibility();
+        }
+        if (parsed.palette) {
+            refs.paletteSelect.value = parsed.palette;
+        }
+        if (parsed.previewMode === 'fit' || parsed.previewMode === 'actual') {
+            state.previewMode = parsed.previewMode;
+        }
+        if (parsed.adjustmentState && typeof parsed.adjustmentState === 'object') {
+            state.adjustmentState.exposure = Number(parsed.adjustmentState.exposure) || 0;
+            state.adjustmentState.contrast = Number(parsed.adjustmentState.contrast) || 0;
+            state.adjustmentState.saturation = Number(parsed.adjustmentState.saturation) || 0;
+        }
+    } catch (error) {
+        // ignore invalid local settings
+    }
 }
 
 function bindFileInteractions() {
@@ -119,15 +215,18 @@ function bindResolutionControls() {
             refs.presetSizeSelect.value = state.activePresetId || '';
             updateCustomSizeVisibility();
             openPresetManager();
+            persistUserSettings();
             return;
         }
 
         if (!value) {
             selectCustomPreset();
+            persistUserSettings();
             return;
         }
 
         applyPresetSelection(value);
+        persistUserSettings();
     });
 
     refs.swapDimensionsBtn.addEventListener('click', () => {
@@ -159,22 +258,26 @@ function bindResolutionControls() {
 
         syncPresetSelection();
         tryAutoApplyResolution();
+        persistUserSettings();
     });
 
     refs.widthInput.addEventListener('input', () => {
         syncPresetSelection();
         tryAutoApplyResolution();
+        persistUserSettings();
     });
 
     refs.heightInput.addEventListener('input', () => {
         syncPresetSelection();
         tryAutoApplyResolution();
+        persistUserSettings();
     });
 }
 
 function bindAdjustmentControls() {
     refs.backgroundColorInput.addEventListener('input', () => {
         setBackgroundColor(refs.backgroundColorInput.value);
+        persistUserSettings();
     });
 
     refs.backgroundHexInput.addEventListener('input', () => {
@@ -183,27 +286,95 @@ function bindAdjustmentControls() {
             refs.backgroundColorInput.value = normalized;
             refs.backgroundHexInput.value = normalized;
             schedulePreviewRender();
+            persistUserSettings();
         }
     });
 
     refs.backgroundHexInput.addEventListener('blur', () => {
         refs.backgroundHexInput.value = refs.backgroundColorInput.value.toUpperCase();
+        persistUserSettings();
     });
-
-    refs.pickColorBtn.addEventListener('click', pickBackgroundColor);
 
     refs.ditherEnabledInput.addEventListener('change', () => {
         updateDitherUIState();
         schedulePreviewRender();
+        persistUserSettings();
     });
 
-    refs.paletteSelect.addEventListener('change', schedulePreviewRender);
+    refs.showOuterMaskInput?.addEventListener('change', () => {
+        state.showOuterMask = refs.showOuterMaskInput.checked;
+        updateOverlayVisibility();
+        persistUserSettings();
+    });
+
+    refs.backgroundColorInput.addEventListener('pointerdown', () => {
+        state.isColorPicking = true;
+        state.suppressDitherPreview = true;
+        updateOverlayVisibility();
+        updateDitherUIState();
+        schedulePreviewRender();
+    });
+    refs.backgroundColorInput.addEventListener('change', () => {
+        state.isColorPicking = false;
+        state.suppressDitherPreview = false;
+        updateOverlayVisibility();
+        updateDitherUIState();
+        schedulePreviewRender();
+    });
+    refs.backgroundColorInput.addEventListener('blur', () => {
+        state.isColorPicking = false;
+        state.suppressDitherPreview = false;
+        updateOverlayVisibility();
+        updateDitherUIState();
+        schedulePreviewRender();
+    });
+
+    refs.previewModeToggleBtn?.addEventListener('click', () => {
+        const prevCropBoxData = state.cropper ? state.cropper.getCropBoxData() : null;
+        const prevCanvasData = state.cropper ? state.cropper.getCanvasData() : null;
+        state.previewMode = state.previewMode === 'actual' ? 'fit' : 'actual';
+        if (state.cropper) {
+            applyFixedCropBox(state.previewMode === 'actual');
+
+            const nextCropBoxData = state.cropper.getCropBoxData();
+            if (
+                prevCropBoxData &&
+                prevCanvasData &&
+                nextCropBoxData &&
+                prevCropBoxData.width > 0 &&
+                prevCropBoxData.height > 0
+            ) {
+                // Keep the same composition ratio to avoid mode-toggle drift.
+                const relLeft = (prevCanvasData.left - prevCropBoxData.left) / prevCropBoxData.width;
+                const relTop = (prevCanvasData.top - prevCropBoxData.top) / prevCropBoxData.height;
+                const relWidth = prevCanvasData.width / prevCropBoxData.width;
+                const relHeight = prevCanvasData.height / prevCropBoxData.height;
+
+                state.cropper.setCanvasData({
+                    left: nextCropBoxData.left + relLeft * nextCropBoxData.width,
+                    top: nextCropBoxData.top + relTop * nextCropBoxData.height,
+                    width: Math.max(1, relWidth * nextCropBoxData.width),
+                    height: Math.max(1, relHeight * nextCropBoxData.height)
+                });
+            }
+        }
+        updatePreviewCanvasPresentation();
+        updateDitherUIState();
+        schedulePreviewRender();
+        persistUserSettings();
+    });
+
+    refs.paletteSelect.addEventListener('change', () => {
+        schedulePreviewRender();
+        persistUserSettings();
+    });
 
     refs.exposureInput.addEventListener('input', () => {
         state.adjustmentState.exposure = Number.parseInt(refs.exposureInput.value, 10) || 0;
         updateAdjustmentValueLabels();
         updateAdjustmentPreview();
         schedulePreviewRender();
+        persistUserSettings();
     });
 
     refs.contrastInput.addEventListener('input', () => {
@@ -211,6 +382,7 @@ function bindAdjustmentControls() {
         updateAdjustmentValueLabels();
         updateAdjustmentPreview();
         schedulePreviewRender();
+        persistUserSettings();
     });
 
     refs.saturationInput.addEventListener('input', () => {
@@ -218,11 +390,13 @@ function bindAdjustmentControls() {
         updateAdjustmentValueLabels();
         updateAdjustmentPreview();
         schedulePreviewRender();
+        persistUserSettings();
     });
 
     refs.resetAdjustmentsBtn.addEventListener('click', () => {
         resetAdjustments();
         schedulePreviewRender();
+        persistUserSettings();
     });
 }
 
@@ -281,6 +455,33 @@ function bindEditorActions() {
 
 function bindKeyboardShortcuts() {
     document.addEventListener('keydown', (event) => {
+        const activeElement = document.activeElement;
+        const isTypingTarget = activeElement &&
+            (activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.tagName === 'SELECT' ||
+                activeElement.isContentEditable);
+
+        if (event.code === 'Space') {
+            if (isTypingTarget) {
+                return;
+            }
+            if (activeElement?.tagName === 'BUTTON') {
+                activeElement.blur();
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            state.isSpacePressed = true;
+            refs.editorStage.classList.add('space-pan-ready');
+            if (state.cropper) {
+                state.cropper.setDragMode('none');
+            }
+        }
+
+        if (state.isSpacePressed) {
+            return;
+        }
+
         if (!state.cropper) {
             return;
         }
@@ -328,9 +529,40 @@ function bindKeyboardShortcuts() {
         applyFixedCropBox();
         schedulePreviewRender();
     });
+
+    document.addEventListener('keyup', (event) => {
+        if (event.code !== 'Space') {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        state.isSpacePressed = false;
+        state.workspacePanState = null;
+        refs.editorStage.classList.remove('space-pan-ready');
+        refs.editorStage.classList.remove('space-panning');
+        if (state.cropper) {
+            state.cropper.setDragMode('move');
+        }
+    });
+
+    window.addEventListener('blur', () => {
+        state.isSpacePressed = false;
+        state.workspacePanState = null;
+        refs.editorStage.classList.remove('space-pan-ready');
+        refs.editorStage.classList.remove('space-panning');
+        if (state.cropper) {
+            state.cropper.setDragMode('move');
+        }
+    });
 }
 
 function bindWindowInteractions() {
+    window.addEventListener('wheel', (event) => {
+        if (event.ctrlKey) {
+            event.preventDefault();
+        }
+    }, { passive: false });
+
     window.addEventListener('resize', () => {
         clearTimeout(state.resizeTimer);
         state.resizeTimer = window.setTimeout(() => {
@@ -364,7 +596,7 @@ function bindWindowInteractions() {
         document.body.style.userSelect = 'none';
     });
 
-    refs.floatingPreview.addEventListener('pointerdown', (event) => {
+    refs.floatingPreview?.addEventListener('pointerdown', (event) => {
         if (!refs.ditherEnabledInput.checked || !state.cropper) {
             return;
         }
@@ -380,9 +612,35 @@ function bindWindowInteractions() {
         document.body.style.userSelect = 'none';
     });
 
-    refs.floatingPreview.addEventListener('dragstart', (event) => {
+    refs.floatingPreview?.addEventListener('dragstart', (event) => {
         event.preventDefault();
     });
+
+    window.addEventListener('pointerdown', (event) => {
+        if (!state.isSpacePressed || event.button !== 0) {
+            return;
+        }
+        const stageRect = refs.editorStage.getBoundingClientRect();
+        const insideStage =
+            event.clientX >= stageRect.left &&
+            event.clientX <= stageRect.right &&
+            event.clientY >= stageRect.top &&
+            event.clientY <= stageRect.bottom;
+        if (!insideStage) {
+            return;
+        }
+
+        event.preventDefault();
+        state.workspacePanState = {
+            startX: event.clientX,
+            startY: event.clientY,
+            originX: state.workspacePanOffset.x,
+            originY: state.workspacePanOffset.y
+        };
+        refs.editorStage.classList.add('space-panning');
+        document.body.style.cursor = 'move';
+        document.body.style.userSelect = 'none';
+    }, true);
 
     refs.editorStage.addEventListener('dblclick', () => {
         if (!state.cropper) {
@@ -419,6 +677,14 @@ function bindWindowInteractions() {
     });
 
     window.addEventListener('pointermove', (event) => {
+        if (state.workspacePanState) {
+            event.preventDefault();
+            const nextX = state.workspacePanState.originX + (event.clientX - state.workspacePanState.startX);
+            const nextY = state.workspacePanState.originY + (event.clientY - state.workspacePanState.startY);
+            setWorkspacePanOffset(nextX, nextY);
+            return;
+        }
+
         if (state.sidePanelDragState) {
             event.preventDefault();
             const left = event.clientX - state.sidePanelDragState.offsetX;
@@ -438,37 +704,72 @@ function bindWindowInteractions() {
     });
 
     window.addEventListener('pointerup', () => {
+        state.workspacePanState = null;
+        refs.editorStage.classList.remove('space-panning');
         state.sidePanelDragState = null;
         refs.sidePanel?.classList.remove('dragging');
         stopPreviewDrag();
     });
 
     window.addEventListener('pointercancel', () => {
+        state.workspacePanState = null;
+        refs.editorStage.classList.remove('space-panning');
         state.sidePanelDragState = null;
         refs.sidePanel?.classList.remove('dragging');
         stopPreviewDrag();
     });
 }
 
+function suppressToolbarSpaceTrigger() {
+    const shouldAllowTyping = (target) => target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+
+    const handleSpaceSuppression = (event) => {
+        if (event.code !== 'Space') {
+            return;
+        }
+        const target = event.target;
+        if (shouldAllowTyping(target)) {
+            return;
+        }
+
+        // Stop native "Space triggers focused button" behavior.
+        if (document.activeElement?.tagName === 'BUTTON') {
+            document.activeElement.blur();
+        }
+        event.preventDefault();
+        event.stopPropagation();
+    };
+
+    refs.sidePanel?.addEventListener('keydown', handleSpaceSuppression, true);
+    refs.sidePanel?.addEventListener('keyup', handleSpaceSuppression, true);
+}
+
 function initialize() {
     appendFloatingPreviewToBody();
     initializePresetManager();
+    loadUserSettings();
     bindFileInteractions();
     bindResolutionControls();
     bindAdjustmentControls();
     bindEditorActions();
     bindKeyboardShortcuts();
     bindWindowInteractions();
+    suppressToolbarSpaceTrigger();
 
     updateInfo();
     updateCustomSizeVisibility();
     updateDitherUIState();
+    state.showOuterMask = refs.showOuterMaskInput?.checked ?? true;
+    updateOverlayVisibility();
     syncAdjustmentInputs();
     state.targetWidth = Number.parseInt(refs.widthInput.value, 10) || 0;
     state.targetHeight = Number.parseInt(refs.heightInput.value, 10) || 0;
     updateOverlayMask(0, 0);
     setFloatingPreviewPosition(state.previewPosition.left, state.previewPosition.top);
     initializeSidePanelPosition();
+    setWorkspacePanOffset(0, 0);
+    persistUserSettings();
 }
 
 initialize();
