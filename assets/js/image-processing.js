@@ -1,0 +1,317 @@
+﻿import { PALETTE_PRESETS, refs, state } from './state.js';
+import {
+    clamp,
+    clampChannel,
+    formatSignedValue,
+    hslToRgb,
+    rgbToHsl
+} from './utils.js';
+
+export function updateAdjustmentPreview() {
+    const brightness = Math.pow(2, state.adjustmentState.exposure / 100).toFixed(3);
+    const contrast = Math.max(0, 1 + state.adjustmentState.contrast / 100).toFixed(3);
+    const saturation = Math.max(0, 1 + state.adjustmentState.saturation / 100).toFixed(3);
+    const filters = [];
+
+    if (state.adjustmentState.exposure !== 0) {
+        filters.push(`brightness(${brightness})`);
+    }
+
+    if (state.adjustmentState.contrast !== 0) {
+        filters.push(`contrast(${contrast})`);
+    }
+
+    if (state.adjustmentState.hue !== 0) {
+        filters.push(`hue-rotate(${state.adjustmentState.hue}deg)`);
+    }
+
+    if (state.adjustmentState.saturation !== 0) {
+        filters.push(`saturate(${saturation})`);
+    }
+
+    const filterValue = filters.length ? filters.join(' ') : 'none';
+    refs.image.style.filter = filterValue;
+    refs.editorStage.querySelectorAll('.cropper-container img').forEach((img) => {
+        img.style.filter = filterValue;
+    });
+}
+
+export function updateAdjustmentValueLabels() {
+    refs.exposureValue.textContent = formatSignedValue(state.adjustmentState.exposure);
+    refs.contrastValue.textContent = formatSignedValue(state.adjustmentState.contrast);
+    refs.saturationValue.textContent = formatSignedValue(state.adjustmentState.saturation);
+}
+
+export function syncAdjustmentInputs() {
+    refs.exposureInput.value = String(state.adjustmentState.exposure);
+    refs.contrastInput.value = String(state.adjustmentState.contrast);
+    refs.saturationInput.value = String(state.adjustmentState.saturation);
+    updateAdjustmentValueLabels();
+    updateAdjustmentPreview();
+}
+
+export function resetAdjustments() {
+    state.adjustmentState = {
+        exposure: 0,
+        contrast: 0,
+        hue: 0,
+        saturation: 0
+    };
+    syncAdjustmentInputs();
+}
+
+export function applyImageAdjustmentsToCanvas(sourceCanvas) {
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = sourceCanvas.width;
+    outputCanvas.height = sourceCanvas.height;
+
+    const outputContext = outputCanvas.getContext('2d');
+    outputContext.drawImage(sourceCanvas, 0, 0);
+
+    const imageData = outputContext.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
+    const pixels = imageData.data;
+    const exposureFactor = Math.pow(2, state.adjustmentState.exposure / 100);
+    const contrastFactor = Math.max(0, 1 + state.adjustmentState.contrast / 100);
+    const saturationFactor = Math.max(0, 1 + state.adjustmentState.saturation / 100);
+    const hueShift = state.adjustmentState.hue;
+    const shouldAdjustHueSat = hueShift !== 0 || saturationFactor !== 1;
+
+    for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index + 3] === 0) {
+            continue;
+        }
+
+        let red = clamp(pixels[index] * exposureFactor, 0, 255);
+        let green = clamp(pixels[index + 1] * exposureFactor, 0, 255);
+        let blue = clamp(pixels[index + 2] * exposureFactor, 0, 255);
+
+        red = clamp((red - 127.5) * contrastFactor + 127.5, 0, 255);
+        green = clamp((green - 127.5) * contrastFactor + 127.5, 0, 255);
+        blue = clamp((blue - 127.5) * contrastFactor + 127.5, 0, 255);
+
+        if (shouldAdjustHueSat) {
+            const hsl = rgbToHsl(red, green, blue);
+            const shiftedHue = (hsl.hue + hueShift + 360) % 360;
+            const adjustedSaturation = clamp(hsl.saturation * saturationFactor, 0, 1);
+            [red, green, blue] = hslToRgb(shiftedHue, adjustedSaturation, hsl.lightness);
+        }
+
+        pixels[index] = Math.round(red);
+        pixels[index + 1] = Math.round(green);
+        pixels[index + 2] = Math.round(blue);
+    }
+
+    outputContext.putImageData(imageData, 0, 0);
+    return outputCanvas;
+}
+
+export function fillCanvasBackground(sourceCanvas, color) {
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = sourceCanvas.width;
+    outputCanvas.height = sourceCanvas.height;
+
+    const outputContext = outputCanvas.getContext('2d');
+    outputContext.fillStyle = color || '#ffffff';
+    outputContext.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+    outputContext.drawImage(sourceCanvas, 0, 0);
+
+    return outputCanvas;
+}
+
+export function canvasToBMP(canvas) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const pixels = ctx.getImageData(0, 0, width, height).data;
+    const bytesPerPixel = 3;
+    const rowSize = width * bytesPerPixel;
+    const paddedRowSize = (rowSize + 3) & ~3;
+    const paddingSize = paddedRowSize - rowSize;
+    const pixelArraySize = paddedRowSize * height;
+    const pixelDataOffset = 54;
+    const fileSize = pixelDataOffset + pixelArraySize;
+    const buffer = new ArrayBuffer(fileSize);
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+
+    view.setUint8(0, 0x42);
+    view.setUint8(1, 0x4D);
+    view.setUint32(2, fileSize, true);
+    view.setUint16(6, 0, true);
+    view.setUint16(8, 0, true);
+    view.setUint32(10, pixelDataOffset, true);
+
+    view.setUint32(14, 40, true);
+    view.setInt32(18, width, true);
+    view.setInt32(22, height, true);
+    view.setUint16(26, 1, true);
+    view.setUint16(28, 24, true);
+    view.setUint32(30, 0, true);
+    view.setUint32(34, pixelArraySize, true);
+    view.setInt32(38, 2835, true);
+    view.setInt32(42, 2835, true);
+    view.setUint32(46, 0, true);
+    view.setUint32(50, 0, true);
+
+    let offset = pixelDataOffset;
+    for (let y = height - 1; y >= 0; y--) {
+        const rowStart = y * width * 4;
+        for (let x = 0; x < width; x++) {
+            const pixelOffset = rowStart + x * 4;
+            bytes[offset++] = pixels[pixelOffset + 2];
+            bytes[offset++] = pixels[pixelOffset + 1];
+            bytes[offset++] = pixels[pixelOffset];
+        }
+        for (let p = 0; p < paddingSize; p++) {
+            bytes[offset++] = 0;
+        }
+    }
+
+    return buffer;
+}
+
+export function indexedToBMP(width, height, indices, palette) {
+    const paletteSize = Math.max(1, Math.min(256, palette.length));
+    const rowSize = width;
+    const paddedRowSize = (rowSize + 3) & ~3;
+    const paddingSize = paddedRowSize - rowSize;
+    const pixelArraySize = paddedRowSize * height;
+    const paletteBytes = paletteSize * 4;
+    const pixelDataOffset = 14 + 40 + paletteBytes;
+    const fileSize = pixelDataOffset + pixelArraySize;
+    const buffer = new ArrayBuffer(fileSize);
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+
+    view.setUint8(0, 0x42);
+    view.setUint8(1, 0x4D);
+    view.setUint32(2, fileSize, true);
+    view.setUint16(6, 0, true);
+    view.setUint16(8, 0, true);
+    view.setUint32(10, pixelDataOffset, true);
+
+    view.setUint32(14, 40, true);
+    view.setInt32(18, width, true);
+    view.setInt32(22, height, true);
+    view.setUint16(26, 1, true);
+    view.setUint16(28, 8, true);
+    view.setUint32(30, 0, true);
+    view.setUint32(34, pixelArraySize, true);
+    view.setInt32(38, 2835, true);
+    view.setInt32(42, 2835, true);
+    view.setUint32(46, paletteSize, true);
+    view.setUint32(50, paletteSize, true);
+
+    let paletteOffset = 54;
+    for (let index = 0; index < paletteSize; index++) {
+        const color = palette[index] || [0, 0, 0];
+        bytes[paletteOffset++] = color[2];
+        bytes[paletteOffset++] = color[1];
+        bytes[paletteOffset++] = color[0];
+        bytes[paletteOffset++] = 0;
+    }
+
+    let offset = pixelDataOffset;
+    for (let y = height - 1; y >= 0; y--) {
+        const rowStart = y * width;
+        for (let x = 0; x < width; x++) {
+            bytes[offset++] = indices[rowStart + x];
+        }
+        for (let p = 0; p < paddingSize; p++) {
+            bytes[offset++] = 0;
+        }
+    }
+
+    return buffer;
+}
+
+export function getSelectedPalette(paletteName) {
+    return PALETTE_PRESETS[paletteName] || PALETTE_PRESETS['4-color.act'];
+}
+
+export function findNearestPaletteColor(red, green, blue, palette) {
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < palette.length; index++) {
+        const color = palette[index];
+        const dr = red - color[0];
+        const dg = green - color[1];
+        const db = blue - color[2];
+        const distance = dr * dr + dg * dg + db * db;
+
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = index;
+        }
+    }
+
+    return {
+        index: bestIndex,
+        color: palette[bestIndex]
+    };
+}
+
+export function addError(buffer, width, height, x, y, errorRed, errorGreen, errorBlue, factor) {
+    if (x < 0 || x >= width || y < 0 || y >= height) {
+        return;
+    }
+
+    const offset = (y * width + x) * 4;
+    buffer[offset] += errorRed * factor;
+    buffer[offset + 1] += errorGreen * factor;
+    buffer[offset + 2] += errorBlue * factor;
+}
+
+export function quantizeCanvasToIndexed(canvas, paletteName) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const pixels = imageData.data;
+    const working = new Float32Array(pixels.length);
+    const palette = getSelectedPalette(paletteName);
+    const indices = new Uint8Array(width * height);
+
+    for (let index = 0; index < pixels.length; index++) {
+        working[index] = pixels[index];
+    }
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const offset = (y * width + x) * 4;
+            const red = clampChannel(working[offset]);
+            const green = clampChannel(working[offset + 1]);
+            const blue = clampChannel(working[offset + 2]);
+
+            const nearest = findNearestPaletteColor(red, green, blue, palette);
+            const nearestColor = nearest.color;
+
+            pixels[offset] = nearestColor[0];
+            pixels[offset + 1] = nearestColor[1];
+            pixels[offset + 2] = nearestColor[2];
+            pixels[offset + 3] = 255;
+            indices[y * width + x] = nearest.index;
+
+            const errorRed = red - nearestColor[0];
+            const errorGreen = green - nearestColor[1];
+            const errorBlue = blue - nearestColor[2];
+            addError(working, width, height, x + 1, y, errorRed, errorGreen, errorBlue, 7 / 16);
+            addError(working, width, height, x - 1, y + 1, errorRed, errorGreen, errorBlue, 3 / 16);
+            addError(working, width, height, x, y + 1, errorRed, errorGreen, errorBlue, 5 / 16);
+            addError(working, width, height, x + 1, y + 1, errorRed, errorGreen, errorBlue, 1 / 16);
+        }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    return {
+        width,
+        height,
+        palette,
+        indices,
+        imageData
+    };
+}
+
+
+
