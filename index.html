@@ -23,12 +23,17 @@
             <section class="editor-panel">
                 <div class="editor-stage" id="editorStage">
                     <div class="drop-zone" id="dropZone">
-                        <div class="drop-icon">图片</div>
-                        <div class="drop-title">拖入图片开始编辑</div>
-                        <div class="drop-desc">
-                            支持拖拽上传或点击选择图片。设置目标导出尺寸后，中央裁剪框会按对应比例固定显示，图片可在下方进行缩放、移动和旋转。
+                        <div class="landing-title">QuickShakePic</div>
+                        <div class="landing-desc">
+                            流程：导入图片 → 设定裁剪尺寸 → 构图/调色 → 选择色板导出 BMP<br>
+                            快捷键：Ctrl+S 导出，Ctrl+N 清除，Ctrl+Z 撤销，Ctrl+Y 重做，Ctrl+B 取色
                         </div>
-                        <button class="primary" type="button" id="pickFileBtn">选择图片</button>
+                        <button class="primary landing-pick-btn" type="button" id="pickFileBtn">导入或粘贴图片</button>
+                        <div class="landing-open-source">
+                            <span class="gitee-icon" aria-hidden="true"></span>
+                            <span>开源地址：</span>
+                            <a href="https://gitee.com/chiyoooo/quick-shake-pic" target="_blank" rel="noopener noreferrer">gitee.com/chiyoooo/quick-shake-pic</a>
+                        </div>
                         <input type="file" id="fileInput" accept="image/*">
                     </div>
 
@@ -55,19 +60,18 @@
             </section>
 
             <aside class="side-panel" id="sidePanel">
-                <div class="side-panel-drag-handle" id="sidePanelDragHandle" title="拖动工具栏位置" aria-label="拖动工具栏位置"></div>
-                <section class="panel-section action-section">
+                <section class="panel-section">
                     <div class="action-grid">
                         <button class="success full" type="button" id="exportBtn">导出8bitBMP</button>
-                        <button class="danger full" type="button" id="newImageBtn">清除重来</button>
+                        <button class="danger full" type="button" id="newImageBtn">清除</button>
                     </div>
                 </section>
 
                 <section class="panel-section">
-                    <h2>裁剪输出尺寸</h2>
+                    <h2>裁剪尺寸</h2>
                     <div class="preset-inline">
                         <div class="field preset-select-field">
-                            <label for="presetSize">预设尺寸</label>
+                            <label class="sr-only" for="presetSize">预设尺寸</label>
                             <select id="presetSize"></select>
                         </div>
                         <button class="compact-side-btn icon-only" type="button" id="swapDimensionsBtn" title="横竖互换"
@@ -115,25 +119,19 @@
                     </div>
                     <div class="adjustment-stack">
                         <label class="slider-field" for="exposureInput">
-                            <span class="slider-head">
-                                <span>曝光</span>
-                                <strong id="exposureValue">0</strong>
-                            </span>
+                            <span>曝光</span>
                             <input type="range" id="exposureInput" min="-100" max="100" step="1" value="0">
+                            <strong id="exposureValue">0</strong>
                         </label>
                         <label class="slider-field" for="contrastInput">
-                            <span class="slider-head">
-                                <span>对比度</span>
-                                <strong id="contrastValue">0</strong>
-                            </span>
+                            <span>对比度</span>
                             <input type="range" id="contrastInput" min="-100" max="100" step="1" value="0">
+                            <strong id="contrastValue">0</strong>
                         </label>
                         <label class="slider-field" for="saturationInput">
-                            <span class="slider-head">
-                                <span>饱和度</span>
-                                <strong id="saturationValue">0</strong>
-                            </span>
+                            <span>饱和度</span>
                             <input type="range" id="saturationInput" min="-100" max="100" step="1" value="0">
+                            <strong id="saturationValue">0</strong>
                         </label>
                     </div>
                 </section>
@@ -144,30 +142,8 @@
                         <label for="backgroundColorInput">画布填充色</label>
                         <div class="compact-color-row">
                             <input class="color-swatch-input" type="color" id="backgroundColorInput" value="#ffffff">
-                            <input class="hex-input" type="text" id="backgroundHexInput" value="#FFFFFF" maxlength="7"
-                                spellcheck="false">
-                        </div>
-                    </div>
-                    <div class="field" style="margin-bottom: 10px;">
-                        <label class="toggle-field">
-                            <input type="checkbox" id="showOuterMask" checked>
-                            <span>显示裁剪框外内容</span>
-                        </label>
-                    </div>
-                    <div class="field" style="margin-bottom: 10px;">
-                        <label for="ditherEnabled">抖动开关</label>
-                        <label class="toggle-field">
-                            <input type="checkbox" id="ditherEnabled" checked>
-                            <span>启用抖动处理</span>
-                        </label>
-                    </div>
-                    <div class="field" style="margin-bottom: 10px;">
-                        <button class="full" type="button" id="previewModeToggleBtn">预览模式：实际像素</button>
-                    </div>
-                    <div class="field-grid">
-                        <div class="field">
-                            <label for="paletteSelect">色板</label>
                             <select id="paletteSelect">
+                                <option value="__none__">不使用调色板</option>
                                 <option value="4-color.act">4-color.act</option>
                                 <option value="6-color.act">6-color.act</option>
                                 <option value="Black-White.act">Black-White.act</option>
@@ -175,6 +151,15 @@
                                 <option value="Black-White-Yellow.act">Black-White-Yellow.act</option>
                                 <option value="N-color.act">N-color.act</option>
                             </select>
+                        </div>
+                    </div>
+                    <input type="checkbox" id="showOuterMask" checked hidden>
+                    <input type="checkbox" id="ditherEnabled" checked hidden>
+                    <div class="field-grid compact-toggle-grid">
+                        <button class="full" type="button" id="showOuterMaskBtn">显示裁剪框外内容</button>
+                        <div class="preview-mode-toggle" id="previewModeToggle">
+                            <button type="button" id="previewModeActualBtn" class="mode-btn">实际像素</button>
+                            <button type="button" id="previewModeFitBtn" class="mode-btn">适合视图</button>
                         </div>
                     </div>
                 </section>

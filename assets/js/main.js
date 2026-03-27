@@ -57,7 +57,7 @@ function getHistorySnapshot() {
         ditherEnabled: Boolean(refs.ditherEnabledInput.checked),
         palette: refs.paletteSelect.value || '4-color.act',
         backgroundColor: refs.backgroundColorInput.value || '#FFFFFF',
-        backgroundHex: refs.backgroundHexInput.value || '#FFFFFF',
+        backgroundHex: refs.backgroundHexInput?.value || refs.backgroundColorInput.value || '#FFFFFF',
         showOuterMask: Boolean(refs.showOuterMaskInput?.checked ?? true),
         adjustmentState: {
             exposure: Number(state.adjustmentState.exposure) || 0,
@@ -115,14 +115,19 @@ function applyHistorySnapshot(snapshot) {
     updateCustomSizeVisibility();
 
     state.previewMode = snapshot.previewMode === 'fit' ? 'fit' : 'actual';
-    refs.ditherEnabledInput.checked = Boolean(snapshot.ditherEnabled);
+    if (refs.ditherEnabledInput) {
+        refs.ditherEnabledInput.checked = Boolean(snapshot.ditherEnabled) && snapshot.palette !== '__none__';
+    }
     refs.paletteSelect.value = snapshot.palette || refs.paletteSelect.value;
     refs.showOuterMaskInput.checked = Boolean(snapshot.showOuterMask);
     state.showOuterMask = Boolean(snapshot.showOuterMask);
+    refs.showOuterMaskBtn?.classList.toggle('is-active', state.showOuterMask);
     updateOverlayVisibility();
 
     setBackgroundColor(snapshot.backgroundColor || '#FFFFFF');
-    refs.backgroundHexInput.value = (snapshot.backgroundHex || '#FFFFFF').toUpperCase();
+    if (refs.backgroundHexInput) {
+        refs.backgroundHexInput.value = (snapshot.backgroundHex || '#FFFFFF').toUpperCase();
+    }
 
     state.adjustmentState.exposure = Number(snapshot.adjustmentState?.exposure) || 0;
     state.adjustmentState.contrast = Number(snapshot.adjustmentState?.contrast) || 0;
@@ -238,14 +243,18 @@ function setWorkspacePanOffset(left, top) {
 }
 
 function persistUserSettings() {
+    const ditherEnabled = refs.paletteSelect.value !== '__none__';
+    if (refs.ditherEnabledInput) {
+        refs.ditherEnabledInput.checked = ditherEnabled;
+    }
     const payload = {
         activePresetId: state.activePresetId || '',
         width: refs.widthInput.value || '',
         height: refs.heightInput.value || '',
         backgroundColor: refs.backgroundColorInput.value || '#FFFFFF',
-        backgroundHex: refs.backgroundHexInput.value || '#FFFFFF',
+        backgroundHex: refs.backgroundHexInput?.value || refs.backgroundColorInput.value || '#FFFFFF',
         showOuterMask: Boolean(refs.showOuterMaskInput?.checked ?? true),
-        ditherEnabled: Boolean(refs.ditherEnabledInput.checked),
+        ditherEnabled,
         palette: refs.paletteSelect.value || '4-color.act',
         previewMode: state.previewMode,
         adjustmentState: {
@@ -297,12 +306,9 @@ function loadUserSettings() {
         }
         if (parsed.backgroundHex) {
             const normalizedHex = normalizeHexColor(parsed.backgroundHex);
-            if (normalizedHex) {
+            if (normalizedHex && refs.backgroundHexInput) {
                 refs.backgroundHexInput.value = normalizedHex;
             }
-        }
-        if (typeof parsed.ditherEnabled === 'boolean') {
-            refs.ditherEnabledInput.checked = parsed.ditherEnabled;
         }
         if (typeof parsed.showOuterMask === 'boolean' && refs.showOuterMaskInput) {
             refs.showOuterMaskInput.checked = parsed.showOuterMask;
@@ -311,6 +317,9 @@ function loadUserSettings() {
         }
         if (parsed.palette) {
             refs.paletteSelect.value = parsed.palette;
+        }
+        if (refs.ditherEnabledInput) {
+            refs.ditherEnabledInput.checked = refs.paletteSelect.value !== '__none__';
         }
         if (parsed.previewMode === 'fit' || parsed.previewMode === 'actual') {
             state.previewMode = parsed.previewMode;
@@ -448,11 +457,14 @@ function bindResolutionControls() {
 function bindAdjustmentControls() {
     refs.backgroundColorInput.addEventListener('input', () => {
         setBackgroundColor(refs.backgroundColorInput.value);
+        if (refs.backgroundHexInput) {
+            refs.backgroundHexInput.value = refs.backgroundColorInput.value.toUpperCase();
+        }
         persistUserSettings();
         pushHistorySnapshot();
     });
 
-    refs.backgroundHexInput.addEventListener('input', () => {
+    refs.backgroundHexInput?.addEventListener('input', () => {
         const normalized = normalizeHexColor(refs.backgroundHexInput.value);
         if (normalized) {
             refs.backgroundColorInput.value = normalized;
@@ -463,13 +475,13 @@ function bindAdjustmentControls() {
         }
     });
 
-    refs.backgroundHexInput.addEventListener('blur', () => {
+    refs.backgroundHexInput?.addEventListener('blur', () => {
         refs.backgroundHexInput.value = refs.backgroundColorInput.value.toUpperCase();
         persistUserSettings();
         pushHistorySnapshot();
     });
 
-    refs.ditherEnabledInput.addEventListener('change', () => {
+    refs.ditherEnabledInput?.addEventListener('change', () => {
         updateDitherUIState();
         schedulePreviewRender();
         persistUserSettings();
@@ -479,6 +491,18 @@ function bindAdjustmentControls() {
     refs.showOuterMaskInput?.addEventListener('change', () => {
         state.showOuterMask = refs.showOuterMaskInput.checked;
         updateOverlayVisibility();
+        refs.showOuterMaskBtn?.classList.toggle('is-active', state.showOuterMask);
+        persistUserSettings();
+        pushHistorySnapshot();
+    });
+
+    refs.showOuterMaskBtn?.addEventListener('click', () => {
+        state.showOuterMask = !state.showOuterMask;
+        if (refs.showOuterMaskInput) {
+            refs.showOuterMaskInput.checked = state.showOuterMask;
+        }
+        updateOverlayVisibility();
+        refs.showOuterMaskBtn?.classList.toggle('is-active', state.showOuterMask);
         persistUserSettings();
         pushHistorySnapshot();
     });
@@ -508,10 +532,13 @@ function bindAdjustmentControls() {
         schedulePreviewRender();
     });
 
-    refs.previewModeToggleBtn?.addEventListener('click', () => {
+    const applyPreviewMode = (nextMode) => {
+        if (nextMode !== 'fit' && nextMode !== 'actual') {
+            return;
+        }
         const prevCropBoxData = state.cropper ? state.cropper.getCropBoxData() : null;
         const prevCanvasData = state.cropper ? state.cropper.getCanvasData() : null;
-        state.previewMode = state.previewMode === 'actual' ? 'fit' : 'actual';
+        state.previewMode = nextMode;
         if (state.cropper) {
             applyFixedCropBox(state.previewMode === 'actual');
 
@@ -542,10 +569,17 @@ function bindAdjustmentControls() {
         schedulePreviewRender();
         persistUserSettings();
         pushHistorySnapshot();
-    });
+    };
+
+    refs.previewModeActualBtn?.addEventListener('click', () => applyPreviewMode('actual'));
+    refs.previewModeFitBtn?.addEventListener('click', () => applyPreviewMode('fit'));
 
     refs.paletteSelect.addEventListener('change', () => {
+        if (refs.ditherEnabledInput) {
+            refs.ditherEnabledInput.checked = refs.paletteSelect.value !== '__none__';
+        }
         schedulePreviewRender();
+        updateDitherUIState();
         persistUserSettings();
         pushHistorySnapshot();
     });
@@ -844,8 +878,14 @@ function bindWindowInteractions() {
         }, 120);
     });
 
-    refs.sidePanelDragHandle?.addEventListener('pointerdown', (event) => {
+    refs.sidePanel?.addEventListener('pointerdown', (event) => {
         if (!refs.sidePanel) {
+            return;
+        }
+        const interactiveTarget = event.target.closest(
+            'button, input, select, textarea, label, a, [role="button"]'
+        );
+        if (interactiveTarget) {
             return;
         }
         event.preventDefault();
@@ -995,18 +1035,26 @@ function suppressToolbarSpaceTrigger() {
             return;
         }
         const target = event.target;
-        if (shouldAllowTyping(target)) {
+        const activeElement = document.activeElement;
+        const inSidePanel = refs.sidePanel?.contains(target) || refs.sidePanel?.contains(activeElement);
+        if (!inSidePanel) {
+            return;
+        }
+        if (shouldAllowTyping(target) || shouldAllowTyping(activeElement)) {
             return;
         }
 
         // Stop native "Space triggers focused button" behavior.
-        if (document.activeElement?.tagName === 'BUTTON') {
-            document.activeElement.blur();
+        if (activeElement?.tagName === 'BUTTON') {
+            activeElement.blur();
         }
         event.preventDefault();
         event.stopPropagation();
+        event.stopImmediatePropagation();
     };
 
+    window.addEventListener('keydown', handleSpaceSuppression, true);
+    window.addEventListener('keyup', handleSpaceSuppression, true);
     refs.sidePanel?.addEventListener('keydown', handleSpaceSuppression, true);
     refs.sidePanel?.addEventListener('keyup', handleSpaceSuppression, true);
 }
@@ -1027,6 +1075,10 @@ function initialize() {
     updateCustomSizeVisibility();
     updateDitherUIState();
     state.showOuterMask = refs.showOuterMaskInput?.checked ?? true;
+    refs.showOuterMaskBtn?.classList.toggle('is-active', state.showOuterMask);
+    if (refs.ditherEnabledInput) {
+        refs.ditherEnabledInput.checked = refs.paletteSelect.value !== '__none__';
+    }
     updateOverlayVisibility();
     syncAdjustmentInputs();
     state.targetWidth = Number.parseInt(refs.widthInput.value, 10) || 0;

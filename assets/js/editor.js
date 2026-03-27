@@ -27,6 +27,7 @@ export function setWorkspaceState(hasImage) {
     refs.dropZone.style.display = hasImage ? 'none' : 'flex';
     refs.cropWorkspace.classList.toggle('active', hasImage);
     refs.editorStage.classList.toggle('has-image', hasImage);
+    document.body.classList.toggle('has-image', hasImage);
 }
 
 export function updateInfo() {
@@ -42,22 +43,22 @@ export function updateCustomSizeVisibility() {
 export function updateDitherUIState() {
     const shouldShow = Boolean(state.cropper) && refs.ditherEnabledInput.checked && !state.suppressDitherPreview;
     refs.cropFramePreview.style.display = shouldShow ? 'flex' : 'none';
-    if (refs.previewModeToggleBtn) {
-        refs.previewModeToggleBtn.disabled = !shouldShow;
-        refs.previewModeToggleBtn.textContent = `预览模式：${state.previewMode === 'actual' ? '实际像素' : '适合视图'}`;
-    }
+    refs.previewModeActualBtn && (refs.previewModeActualBtn.disabled = !shouldShow);
+    refs.previewModeFitBtn && (refs.previewModeFitBtn.disabled = !shouldShow);
+    refs.previewModeActualBtn?.classList.toggle('is-active', state.previewMode === 'actual');
+    refs.previewModeFitBtn?.classList.toggle('is-active', state.previewMode === 'fit');
     refs.exportBtn.textContent = refs.ditherEnabledInput.checked ? '导出8bitBMP' : '导出24bitBMP';
 }
 
 export function updateOverlayVisibility() {
     let maskOpacity = '1';
-    let maskColor = 'rgba(4, 10, 18, 0.62)';
+    let maskColor = 'rgba(13, 24, 36, 0.62)';
 
     if (state.isColorPicking) {
         maskOpacity = '0';
     } else if (!state.showOuterMask) {
         // Hide outside content completely.
-        maskColor = '#040a12';
+        maskColor = '#0d1824';
     }
 
     refs.maskTop.style.opacity = maskOpacity;
@@ -95,7 +96,9 @@ export function setBackgroundColor(color) {
     }
 
     refs.backgroundColorInput.value = normalized;
-    refs.backgroundHexInput.value = normalized;
+    if (refs.backgroundHexInput) {
+        refs.backgroundHexInput.value = normalized;
+    }
     schedulePreviewRender();
     return true;
 }
@@ -497,8 +500,10 @@ export function getProcessedCanvas() {
         return null;
     }
 
-    const adjustedCanvas = applyImageAdjustmentsToCanvas(canvas);
-    return fillCanvasBackground(adjustedCanvas, refs.backgroundColorInput.value);
+    // Apply background first, then run adjustments on the merged result
+    // so color controls affect both image and fill color together.
+    const compositedCanvas = fillCanvasBackground(canvas, refs.backgroundColorInput.value);
+    return applyImageAdjustmentsToCanvas(compositedCanvas);
 }
 
 export async function pickBackgroundColor() {
