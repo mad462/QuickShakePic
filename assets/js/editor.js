@@ -17,6 +17,45 @@ import {
 } from './image-processing.js';
 import { normalizeHexColor } from './utils.js';
 
+function getExportFileName(fileSuffix) {
+    return `crop_${state.targetWidth}x${state.targetHeight}_${fileSuffix}_${Date.now()}.bmp`;
+}
+
+async function saveBlobWithPicker(blob, suggestedName) {
+    if (typeof window.showSaveFilePicker !== 'function') {
+        return false;
+    }
+
+    const fileHandle = await window.showSaveFilePicker({
+        id: 'quickshakepic-export',
+        suggestedName,
+        types: [
+            {
+                description: 'BMP Image',
+                accept: {
+                    'image/bmp': ['.bmp']
+                }
+            }
+        ]
+    });
+
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return true;
+}
+
+function downloadBlobFallback(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
 export function getTargetAspectRatio() {
     return state.targetWidth > 0 && state.targetHeight > 0
         ? state.targetWidth / state.targetHeight
@@ -518,7 +557,7 @@ export async function pickBackgroundColor() {
     }
 }
 
-export function exportBMP() {
+export async function exportBMP() {
     if (!state.cropper) {
         alert('请先加载图片。');
         return;
@@ -548,14 +587,21 @@ export function exportBMP() {
     }
 
     const blob = new Blob([bmpBuffer], { type: 'image/bmp' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `crop_${state.targetWidth}x${state.targetHeight}_${fileSuffix}_${Date.now()}.bmp`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const fileName = getExportFileName(fileSuffix);
+
+    try {
+        const saved = await saveBlobWithPicker(blob, fileName);
+        if (!saved) {
+            downloadBlobFallback(blob, fileName);
+        }
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            return;
+        }
+
+        console.error('Save failed, falling back to browser download.', error);
+        downloadBlobFallback(blob, fileName);
+    }
 }
 
 export function resetEditor() {
@@ -638,6 +684,5 @@ export function stopPreviewDrag() {
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
 }
-
 
 
