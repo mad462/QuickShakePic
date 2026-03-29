@@ -20,6 +20,7 @@ export const refs = {
     rotateRightBtn: document.getElementById('rotateRight'),
     flipHBtn: document.getElementById('flipH'),
     flipVBtn: document.getElementById('flipV'),
+    fitToCropBtn: document.getElementById('fitToCropBtn'),
     resetBtn: document.getElementById('resetBtn'),
     exportBtn: document.getElementById('exportBtn'),
     newImageBtn: document.getElementById('newImageBtn'),

@@ -83,10 +83,12 @@ async function initializePaletteOptions() {
     );
 
     const availableValues = new Set(Array.from(refs.paletteSelect.options).map((option) => option.value));
-    if (!availableValues.has(refs.paletteSelect.value)) {
-        refs.paletteSelect.value = availableValues.has(DEFAULT_PALETTE_VALUE)
-            ? DEFAULT_PALETTE_VALUE
-            : (availableValues.has(NO_PALETTE_VALUE) ? NO_PALETTE_VALUE : refs.paletteSelect.options[0]?.value || '');
+    if (availableValues.has(DEFAULT_PALETTE_VALUE)) {
+        refs.paletteSelect.value = DEFAULT_PALETTE_VALUE;
+    } else if (!availableValues.has(refs.paletteSelect.value)) {
+        refs.paletteSelect.value = availableValues.has(NO_PALETTE_VALUE)
+            ? NO_PALETTE_VALUE
+            : (refs.paletteSelect.options[0]?.value || '');
     }
 }
 
@@ -733,6 +735,12 @@ function bindEditorActions() {
         pushHistorySnapshot();
     });
 
+    refs.fitToCropBtn.addEventListener('click', () => {
+        if (fitImageToCropBox()) {
+            pushHistorySnapshot();
+        }
+    });
+
 }
 
 function bindKeyboardShortcuts() {
@@ -926,6 +934,40 @@ function bindKeyboardShortcuts() {
     });
 }
 
+function fitImageToCropBox() {
+    if (!state.cropper) {
+        return false;
+    }
+
+    const cropBoxData = state.cropper.getCropBoxData();
+    const canvasData = state.cropper.getCanvasData();
+
+    if (!cropBoxData || !canvasData || !canvasData.width || !canvasData.height) {
+        return false;
+    }
+
+    const scaleFactor = Math.max(
+        cropBoxData.width / canvasData.width,
+        cropBoxData.height / canvasData.height
+    );
+
+    const nextWidth = canvasData.width * scaleFactor;
+    const nextHeight = canvasData.height * scaleFactor;
+    const cropCenterX = cropBoxData.left + cropBoxData.width / 2;
+    const cropCenterY = cropBoxData.top + cropBoxData.height / 2;
+
+    state.cropper.setCanvasData({
+        left: cropCenterX - nextWidth / 2,
+        top: cropCenterY - nextHeight / 2,
+        width: nextWidth,
+        height: nextHeight
+    });
+
+    applyFixedCropBox();
+    schedulePreviewRender();
+    return true;
+}
+
 function bindWindowInteractions() {
     window.addEventListener('wheel', (event) => {
         if (event.ctrlKey) {
@@ -1019,37 +1061,7 @@ function bindWindowInteractions() {
     }, true);
 
     refs.editorStage.addEventListener('dblclick', () => {
-        if (!state.cropper) {
-            return;
-        }
-
-        const cropBoxData = state.cropper.getCropBoxData();
-        const canvasData = state.cropper.getCanvasData();
-
-        if (!cropBoxData || !canvasData || !canvasData.width || !canvasData.height) {
-            return;
-        }
-
-        // Scale proportionally so image fully covers crop frame (no stretch).
-        const scaleFactor = Math.max(
-            cropBoxData.width / canvasData.width,
-            cropBoxData.height / canvasData.height
-        );
-
-        const nextWidth = canvasData.width * scaleFactor;
-        const nextHeight = canvasData.height * scaleFactor;
-        const cropCenterX = cropBoxData.left + cropBoxData.width / 2;
-        const cropCenterY = cropBoxData.top + cropBoxData.height / 2;
-
-        state.cropper.setCanvasData({
-            left: cropCenterX - nextWidth / 2,
-            top: cropCenterY - nextHeight / 2,
-            width: nextWidth,
-            height: nextHeight
-        });
-
-        applyFixedCropBox();
-        schedulePreviewRender();
+        fitImageToCropBox();
     });
 
     window.addEventListener('pointermove', (event) => {
