@@ -521,7 +521,9 @@ export function getProcessedCanvas() {
         return null;
     }
 
-    applyFixedCropBox(state.previewMode === 'actual');
+    // Keep export/preview read path non-destructive:
+    // do not auto-zoom image just because current mode is "actual".
+    applyFixedCropBox();
 
     const canvas = state.cropper.getCroppedCanvas({
         width: state.targetWidth,

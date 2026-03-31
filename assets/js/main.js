@@ -595,7 +595,7 @@ function bindAdjustmentControls() {
         state.previewMode = nextMode;
         syncOuterMaskWithPreviewMode();
         if (state.cropper) {
-            applyFixedCropBox(state.previewMode === 'actual');
+            applyFixedCropBox();
 
             const nextCropBoxData = state.cropper.getCropBoxData();
             if (
