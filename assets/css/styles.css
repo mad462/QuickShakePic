@@ -154,11 +154,7 @@ button:disabled {
   background: #0d1824;
 }
 
-.editor-stage.space-pan-ready {
-  cursor: grab;
-}
-
-.editor-stage.space-panning {
+.editor-stage.workspace-panning {
   cursor: grabbing;
 }
 

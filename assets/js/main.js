@@ -835,28 +835,7 @@ function bindKeyboardShortcuts() {
         }
 
         const activeElement = document.activeElement;
-        const isTypingTarget = isTypingElement(activeElement);
         const key = event.key.toLowerCase();
-
-        if (event.code === 'Space') {
-            if (isTypingTarget) {
-                return;
-            }
-            if (activeElement?.tagName === 'BUTTON') {
-                activeElement.blur();
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            state.isSpacePressed = true;
-            refs.editorStage.classList.add('space-pan-ready');
-            if (state.cropper) {
-                state.cropper.setDragMode('none');
-            }
-        }
-
-        if (state.isSpacePressed) {
-            return;
-        }
 
         if (!state.cropper) {
             return;
@@ -908,29 +887,9 @@ function bindKeyboardShortcuts() {
         pushHistorySnapshot();
     });
 
-    document.addEventListener('keyup', (event) => {
-        if (event.code !== 'Space') {
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        state.isSpacePressed = false;
-        state.workspacePanState = null;
-        refs.editorStage.classList.remove('space-pan-ready');
-        refs.editorStage.classList.remove('space-panning');
-        if (state.cropper) {
-            state.cropper.setDragMode('move');
-        }
-    });
-
     window.addEventListener('blur', () => {
-        state.isSpacePressed = false;
         state.workspacePanState = null;
-        refs.editorStage.classList.remove('space-pan-ready');
-        refs.editorStage.classList.remove('space-panning');
-        if (state.cropper) {
-            state.cropper.setDragMode('move');
-        }
+        refs.editorStage.classList.remove('workspace-panning');
     });
 }
 
@@ -974,6 +933,10 @@ function bindWindowInteractions() {
             event.preventDefault();
         }
     }, { passive: false });
+
+    refs.editorStage?.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+    });
 
     window.addEventListener('resize', () => {
         clearTimeout(state.resizeTimer);
@@ -1035,7 +998,7 @@ function bindWindowInteractions() {
     });
 
     window.addEventListener('pointerdown', (event) => {
-        if (!state.isSpacePressed || event.button !== 0) {
+        if (event.button !== 2) {
             return;
         }
         const stageRect = refs.editorStage.getBoundingClientRect();
@@ -1055,7 +1018,7 @@ function bindWindowInteractions() {
             originX: state.workspacePanOffset.x,
             originY: state.workspacePanOffset.y
         };
-        refs.editorStage.classList.add('space-panning');
+        refs.editorStage.classList.add('workspace-panning');
         document.body.style.cursor = 'move';
         document.body.style.userSelect = 'none';
     }, true);
@@ -1093,7 +1056,7 @@ function bindWindowInteractions() {
 
     window.addEventListener('pointerup', () => {
         state.workspacePanState = null;
-        refs.editorStage.classList.remove('space-panning');
+        refs.editorStage.classList.remove('workspace-panning');
         state.sidePanelDragState = null;
         refs.sidePanel?.classList.remove('dragging');
         stopPreviewDrag();
@@ -1104,58 +1067,11 @@ function bindWindowInteractions() {
 
     window.addEventListener('pointercancel', () => {
         state.workspacePanState = null;
-        refs.editorStage.classList.remove('space-panning');
+        refs.editorStage.classList.remove('workspace-panning');
         state.sidePanelDragState = null;
         refs.sidePanel?.classList.remove('dragging');
         stopPreviewDrag();
     });
-}
-
-function suppressToolbarSpaceTrigger() {
-    const shouldAllowTyping = (target) => target &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
-
-    const isSpaceEvent = (event) =>
-        event.code === 'Space' ||
-        event.key === ' ' ||
-        event.key === 'Spacebar' ||
-        event.keyCode === 32;
-
-    const handleSpaceSuppression = (event) => {
-        if (!isSpaceEvent(event)) {
-            return;
-        }
-        const target = event.target;
-        const activeElement = document.activeElement;
-        const inSidePanel = refs.sidePanel?.contains(target) || refs.sidePanel?.contains(activeElement);
-        const activeIsButton = activeElement?.tagName === 'BUTTON';
-        const targetIsButton = target?.tagName === 'BUTTON';
-        const toolbarInteractive = Boolean(
-            target?.closest?.('#sidePanel button, #sidePanel [role="button"], #sidePanel .icon-action, #sidePanel .mode-btn') ||
-            activeElement?.closest?.('#sidePanel button, #sidePanel [role="button"], #sidePanel .icon-action, #sidePanel .mode-btn')
-        );
-        if (!inSidePanel && !activeIsButton && !targetIsButton && !toolbarInteractive) {
-            return;
-        }
-        if (shouldAllowTyping(target) || shouldAllowTyping(activeElement)) {
-            return;
-        }
-
-        // Stop native "Space triggers focused button" behavior.
-        if (activeElement?.tagName === 'BUTTON') {
-            activeElement.blur();
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-    };
-
-    window.addEventListener('keydown', handleSpaceSuppression, true);
-    window.addEventListener('keyup', handleSpaceSuppression, true);
-    window.addEventListener('keypress', handleSpaceSuppression, true);
-    refs.sidePanel?.addEventListener('keydown', handleSpaceSuppression, true);
-    refs.sidePanel?.addEventListener('keyup', handleSpaceSuppression, true);
-    refs.sidePanel?.addEventListener('keypress', handleSpaceSuppression, true);
 }
 
 async function initialize() {
@@ -1169,7 +1085,6 @@ async function initialize() {
     bindEditorActions();
     bindKeyboardShortcuts();
     bindWindowInteractions();
-    suppressToolbarSpaceTrigger();
 
     updateInfo();
     updateCustomSizeVisibility();
@@ -1190,7 +1105,6 @@ async function initialize() {
 }
 
 initialize();
-
 
 
 
