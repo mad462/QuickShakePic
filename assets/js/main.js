@@ -1,11 +1,11 @@
-import { syncAdjustmentInputs, resetAdjustments, updateAdjustmentPreview, updateAdjustmentValueLabels } from './image-processing.js';
-import { preloadPalettesFromManifest } from './image-processing.js';
+import { syncAdjustmentInputs, resetAdjustments, updateAdjustmentPreview, updateAdjustmentValueLabels } from './image-processing.js?v=20260417';
+import { preloadPalettesFromManifest } from './image-processing.js?v=20260417';
 import {
     appendFloatingPreviewToBody,
     constants,
     refs,
     state
-} from './state.js';
+} from './state.js?v=20260417';
 import {
     applyFixedCropBox,
     clearAll,
@@ -26,14 +26,14 @@ import {
     updateDitherUIState,
     updateInfo,
     updateOverlayMask
-} from './editor.js';
+} from './editor.js?v=20260417';
 import {
     applyPresetSelection,
     initializePresetManager,
     openPresetManager,
     selectCustomPreset
-} from './preset-manager.js';
-import { normalizeHexColor } from './utils.js';
+} from './preset-manager.js?v=20260417';
+import { normalizeHexColor } from './utils.js?v=20260417';
 
 const HISTORY_LIMIT = 80;
 

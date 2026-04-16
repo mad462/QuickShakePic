@@ -6,7 +6,7 @@ import {
     revokeOriginalImageURL,
     state,
     constants
-} from './state.js';
+} from './state.js?v=20260417';
 import {
     applyImageAdjustmentsToCanvas,
     canvasToBMP,
@@ -15,8 +15,8 @@ import {
     getIndexedBmpBitDepth,
     quantizeCanvasToIndexed,
     resetAdjustments
-} from './image-processing.js';
-import { normalizeHexColor } from './utils.js';
+} from './image-processing.js?v=20260417';
+import { normalizeHexColor } from './utils.js?v=20260417';
 
 function getExportFileName(fileSuffix) {
     return `crop_${state.targetWidth}x${state.targetHeight}_${fileSuffix}_${Date.now()}.bmp`;

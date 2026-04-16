@@ -1,9 +1,9 @@
-import { constants, refs, state } from './state.js';
+import { constants, refs, state } from './state.js?v=20260417';
 import {
     setInputsFromDimensions,
     tryAutoApplyResolution,
     updateCustomSizeVisibility
-} from './editor.js';
+} from './editor.js?v=20260417';
 
 const DEFAULT_PRESET_CONFIGS = [
     { id: 'preset-200x200', name: '1.54"', width: 200, height: 200 },

@@ -1,11 +1,11 @@
-import { refs, state } from './state.js';
+import { refs, state } from './state.js?v=20260417';
 import {
     clamp,
     clampChannel,
     formatSignedValue,
     hslToRgb,
     rgbToHsl
-} from './utils.js';
+} from './utils.js?v=20260417';
 
 export function updateAdjustmentPreview() {
     const brightness = Math.pow(2, state.adjustmentState.exposure / 100).toFixed(3);
@@ -176,9 +176,7 @@ export function getIndexedBmpBitDepth(paletteLength) {
     if (safePaletteLength <= 2) {
         return 1;
     }
-    if (safePaletteLength <= 4) {
-        return 2;
-    }
+    // Windows 标准 BMP 仅支持 1/4/8/16/24/32 bpp，不支持 2bpp；3–16 色统一用 4bpp。
     if (safePaletteLength <= 16) {
         return 4;
     }
@@ -193,19 +191,6 @@ function packIndexedRow(indices, rowStart, width, bitDepth, output, outputOffset
     if (bitDepth === 8) {
         for (let x = 0; x < width; x++) {
             output[outputOffset + x] = indices[rowStart + x];
-        }
-        return;
-    }
-
-    if (bitDepth === 2) {
-        for (let x = 0; x < width; x += 4) {
-            let packed = 0;
-            for (let shiftIndex = 0; shiftIndex < 4; shiftIndex++) {
-                const pixelX = x + shiftIndex;
-                const pixelIndex = pixelX < width ? (indices[rowStart + pixelX] & 0x03) : 0;
-                packed |= pixelIndex << (6 - shiftIndex * 2);
-            }
-            output[outputOffset++] = packed;
         }
         return;
     }
