@@ -7,6 +7,9 @@ import {
     rgbToHsl
 } from './utils.js?v=20260417';
 
+/** 后续会多次/大块 getImageData 读回像素时，避免 Canvas2D 性能提示并选用更适合读回的实现 */
+const CANVAS_2D_READBACK = { willReadFrequently: true };
+
 export function updateAdjustmentPreview() {
     const brightness = Math.pow(2, state.adjustmentState.exposure / 100).toFixed(3);
     const contrast = Math.max(0, 1 + state.adjustmentState.contrast / 100).toFixed(3);
@@ -65,7 +68,7 @@ export function applyImageAdjustmentsToCanvas(sourceCanvas) {
     outputCanvas.width = sourceCanvas.width;
     outputCanvas.height = sourceCanvas.height;
 
-    const outputContext = outputCanvas.getContext('2d');
+    const outputContext = outputCanvas.getContext('2d', CANVAS_2D_READBACK);
     outputContext.drawImage(sourceCanvas, 0, 0);
 
     const imageData = outputContext.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
@@ -119,7 +122,7 @@ export function fillCanvasBackground(sourceCanvas, color) {
 }
 
 export function canvasToBMP(canvas) {
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', CANVAS_2D_READBACK);
     const width = canvas.width;
     const height = canvas.height;
     const pixels = ctx.getImageData(0, 0, width, height).data;
@@ -390,7 +393,7 @@ export function addError(buffer, width, height, x, y, errorRed, errorGreen, erro
 }
 
 export function quantizeCanvasToIndexed(canvas, paletteName) {
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', CANVAS_2D_READBACK);
     const width = canvas.width;
     const height = canvas.height;
     const imageData = ctx.getImageData(0, 0, width, height);
