@@ -287,6 +287,12 @@ button:disabled {
   border-bottom-color: #374b61;
 }
 
+.landing-open-source .app-version {
+  margin-left: 10px;
+  opacity: 0.88;
+  white-space: nowrap;
+}
+
 .crop-workspace {
   display: none;
   background: #0d1824;

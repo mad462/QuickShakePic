@@ -34,8 +34,14 @@ import {
     selectCustomPreset
 } from './preset-manager.js?v=20260417';
 import { normalizeHexColor } from './utils.js?v=20260417';
+import { APP_VERSION } from './version.js?v=20260417';
 
 const HISTORY_LIMIT = 80;
+
+const appVersionEl = document.getElementById('appVersion');
+if (appVersionEl) {
+    appVersionEl.textContent = APP_VERSION;
+}
 
 const DEFAULT_PALETTE_VALUE = '4-color.act';
 const NO_PALETTE_VALUE = '__none__';
