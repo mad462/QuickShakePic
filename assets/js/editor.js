@@ -10,8 +10,9 @@ import {
 import {
     applyImageAdjustmentsToCanvas,
     canvasToBMP,
+    exportIndexedBMP,
     fillCanvasBackground,
-    indexedToBMP,
+    getIndexedBmpBitDepth,
     quantizeCanvasToIndexed,
     resetAdjustments
 } from './image-processing.js';
@@ -581,8 +582,9 @@ export async function exportBMP() {
 
     if (refs.ditherEnabledInput.checked) {
         const processed = quantizeCanvasToIndexed(canvas, refs.paletteSelect.value);
-        bmpBuffer = indexedToBMP(processed.width, processed.height, processed.indices, processed.palette);
-        fileSuffix = `${refs.paletteSelect.value.replace('.act', '')}_floyd-steinberg_indexed8`;
+        const bitDepth = getIndexedBmpBitDepth(processed.palette.length);
+        bmpBuffer = exportIndexedBMP(processed.indices, processed.width, processed.height, processed.palette);
+        fileSuffix = `${refs.paletteSelect.value.replace('.act', '')}_floyd-steinberg_indexed${bitDepth}`;
     } else {
         bmpBuffer = canvasToBMP(canvas);
         fileSuffix = 'rgb24';
@@ -686,5 +688,3 @@ export function stopPreviewDrag() {
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
 }
-
-

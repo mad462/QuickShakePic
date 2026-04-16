@@ -170,12 +170,71 @@ export function canvasToBMP(canvas) {
     return buffer;
 }
 
-export function indexedToBMP(width, height, indices, palette) {
+export function getIndexedBmpBitDepth(paletteLength) {
+    const safePaletteLength = Math.max(1, Math.min(256, Number(paletteLength) || 0));
+
+    if (safePaletteLength <= 2) {
+        return 1;
+    }
+    if (safePaletteLength <= 4) {
+        return 2;
+    }
+    if (safePaletteLength <= 16) {
+        return 4;
+    }
+    return 8;
+}
+
+function getIndexedBmpRowSize(width, bitDepth) {
+    return ((width * bitDepth + 31) >> 5) << 2;
+}
+
+function packIndexedRow(indices, rowStart, width, bitDepth, output, outputOffset) {
+    if (bitDepth === 8) {
+        for (let x = 0; x < width; x++) {
+            output[outputOffset + x] = indices[rowStart + x];
+        }
+        return;
+    }
+
+    if (bitDepth === 2) {
+        for (let x = 0; x < width; x += 4) {
+            let packed = 0;
+            for (let shiftIndex = 0; shiftIndex < 4; shiftIndex++) {
+                const pixelX = x + shiftIndex;
+                const pixelIndex = pixelX < width ? (indices[rowStart + pixelX] & 0x03) : 0;
+                packed |= pixelIndex << (6 - shiftIndex * 2);
+            }
+            output[outputOffset++] = packed;
+        }
+        return;
+    }
+
+    if (bitDepth === 4) {
+        for (let x = 0; x < width; x += 2) {
+            const left = indices[rowStart + x] & 0x0F;
+            const right = x + 1 < width ? (indices[rowStart + x + 1] & 0x0F) : 0;
+            output[outputOffset++] = (left << 4) | right;
+        }
+        return;
+    }
+
+    for (let x = 0; x < width; x += 8) {
+        let packed = 0;
+        for (let bit = 0; bit < 8; bit++) {
+            const pixelX = x + bit;
+            const pixelIndex = pixelX < width ? (indices[rowStart + pixelX] & 0x01) : 0;
+            packed |= pixelIndex << (7 - bit);
+        }
+        output[outputOffset++] = packed;
+    }
+}
+
+export function exportIndexedBMP(indexedPixels, width, height, palette) {
     const paletteSize = Math.max(1, Math.min(256, palette.length));
-    const rowSize = width;
-    const paddedRowSize = (rowSize + 3) & ~3;
-    const paddingSize = paddedRowSize - rowSize;
-    const pixelArraySize = paddedRowSize * height;
+    const bitDepth = getIndexedBmpBitDepth(paletteSize);
+    const rowSize = getIndexedBmpRowSize(width, bitDepth);
+    const pixelArraySize = rowSize * height;
     const paletteBytes = paletteSize * 4;
     const pixelDataOffset = 14 + 40 + paletteBytes;
     const fileSize = pixelDataOffset + pixelArraySize;
@@ -194,7 +253,7 @@ export function indexedToBMP(width, height, indices, palette) {
     view.setInt32(18, width, true);
     view.setInt32(22, height, true);
     view.setUint16(26, 1, true);
-    view.setUint16(28, 8, true);
+    view.setUint16(28, bitDepth, true);
     view.setUint32(30, 0, true);
     view.setUint32(34, pixelArraySize, true);
     view.setInt32(38, 2835, true);
@@ -204,7 +263,7 @@ export function indexedToBMP(width, height, indices, palette) {
 
     let paletteOffset = 54;
     for (let index = 0; index < paletteSize; index++) {
-        const color = palette[index] || [0, 0, 0];
+        const color = palette[index];
         bytes[paletteOffset++] = color[2];
         bytes[paletteOffset++] = color[1];
         bytes[paletteOffset++] = color[0];
@@ -214,15 +273,15 @@ export function indexedToBMP(width, height, indices, palette) {
     let offset = pixelDataOffset;
     for (let y = height - 1; y >= 0; y--) {
         const rowStart = y * width;
-        for (let x = 0; x < width; x++) {
-            bytes[offset++] = indices[rowStart + x];
-        }
-        for (let p = 0; p < paddingSize; p++) {
-            bytes[offset++] = 0;
-        }
+        packIndexedRow(indexedPixels, rowStart, width, bitDepth, bytes, offset);
+        offset += rowSize;
     }
 
     return buffer;
+}
+
+export function indexedToBMP(width, height, indices, palette) {
+    return exportIndexedBMP(indices, width, height, palette);
 }
 
 const DEFAULT_PALETTE_NAME = '4-color.act';
@@ -394,6 +453,3 @@ export function quantizeCanvasToIndexed(canvas, paletteName) {
         imageData
     };
 }
-
-
-
