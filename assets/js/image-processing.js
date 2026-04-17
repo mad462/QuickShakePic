@@ -255,7 +255,7 @@ export function exportIndexedBMP(indexedPixels, width, height, palette) {
         bytes[paletteOffset++] = color[2];
         bytes[paletteOffset++] = color[1];
         bytes[paletteOffset++] = color[0];
-        bytes[paletteOffset++] = 0;
+        bytes[paletteOffset++] = 255;
     }
 
     let offset = pixelDataOffset;
