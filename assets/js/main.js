@@ -745,6 +745,8 @@ function bindFileInteractions() {
         normalizeResolutionForImport();
         loadImage(imageFile);
         window.setTimeout(() => {
+            applyPreviewMode('fit', { pushHistory: false });
+            fitImageToCropBox();
             updatePreviewEditingLockState();
             syncZoomControls();
             pushHistorySnapshot();
