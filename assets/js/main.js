@@ -1323,6 +1323,10 @@ function bindWindowInteractions() {
         event.preventDefault();
     });
 
+    refs.sidePanel?.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+    });
+
     document.addEventListener('pointerdown', (event) => {
         if (!refs.ditherAlgorithmPicker?.contains(event.target)) {
             closeDitherAlgorithmMenu();

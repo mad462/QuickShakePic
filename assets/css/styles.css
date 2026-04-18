@@ -47,6 +47,61 @@ body {
   backdrop-filter: none;
 }
 
+.corner-brand {
+  position: fixed;
+  top: 18px;
+  left: 24px;
+  z-index: 5;
+  color: #374b61;
+  font-family: "Pixelitta", "Microsoft YaHei", sans-serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  opacity: 0.95;
+  text-decoration: none;
+}
+
+.shortcut-hints {
+  position: fixed;
+  left: 24px;
+  bottom: 22px;
+  z-index: 5;
+  pointer-events: none;
+  color: #374b61;
+  max-width: min(360px, calc(100vw - 400px));
+}
+
+body:not(.has-image) .shortcut-hints {
+  display: none;
+}
+
+body:not(.has-image) .corner-brand {
+  display: none;
+}
+
+.shortcut-hints-list {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+.shortcut-hints-list li {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.shortcut-hints-list li span:first-child {
+  font-weight: 600;
+}
+
 .header {
   display: none;
 }
@@ -1170,6 +1225,10 @@ body.has-image .side-panel {
     width: min(312px, calc(100vw - 24px));
     max-height: calc(100vh - 24px);
   }
+
+  .shortcut-hints {
+    max-width: min(320px, calc(100vw - 48px));
+  }
 }
 
 @media (max-width: 640px) {
@@ -1221,5 +1280,23 @@ body.has-image .side-panel {
   .preset-action-btn {
     flex: 1 1 0;
     width: auto;
+  }
+
+  .corner-brand {
+    top: 14px;
+    left: 18px;
+    font-size: 20px;
+  }
+
+  .shortcut-hints {
+    left: 18px;
+    bottom: 16px;
+    max-width: calc(100vw - 36px);
+  }
+
+  .shortcut-hints-list li {
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 8px;
+    font-size: 11px;
   }
 }
