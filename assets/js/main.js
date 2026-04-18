@@ -1,12 +1,13 @@
-import { syncAdjustmentInputs, resetAdjustments, updateAdjustmentPreview, updateAdjustmentValueLabels } from './image-processing.js?v=20260417';
-import { preloadPalettesFromManifest } from './image-processing.js?v=20260417';
+import { DEFAULT_DITHER_ALGORITHM, syncAdjustmentInputs, resetAdjustments, updateAdjustmentPreview, updateAdjustmentValueLabels } from './image-processing.js?v=20260418-3';
+import { preloadPalettesFromManifest } from './image-processing.js?v=20260418-3';
 import {
     appendFloatingPreviewToBody,
     constants,
     refs,
     state
-} from './state.js?v=20260417';
+} from './state.js?v=20260418-3';
 import {
+    applyZoomPercent,
     applyFixedCropBox,
     clearAll,
     exportBMP,
@@ -17,6 +18,7 @@ import {
     schedulePreviewRender,
     setBackgroundColor,
     setFloatingPreviewPosition,
+    syncZoomControls,
     stopPreviewDrag,
     syncPresetSelection,
     tryAutoApplyResolution,
@@ -26,15 +28,15 @@ import {
     updateDitherUIState,
     updateInfo,
     updateOverlayMask
-} from './editor.js?v=20260417';
+} from './editor.js?v=20260418-3';
 import {
     applyPresetSelection,
     initializePresetManager,
     openPresetManager,
     selectCustomPreset
-} from './preset-manager.js?v=20260417';
-import { normalizeHexColor } from './utils.js?v=20260417';
-import { APP_VERSION } from './version.js?v=20260417';
+} from './preset-manager.js?v=20260418-3';
+import { normalizeHexColor } from './utils.js?v=20260418-3';
+import { APP_VERSION } from './version.js?v=20260418-3';
 
 const HISTORY_LIMIT = 80;
 
@@ -45,6 +47,31 @@ if (appVersionEl) {
 
 const DEFAULT_PALETTE_VALUE = '4-color.act';
 const NO_PALETTE_VALUE = '__none__';
+const PREVIEW_START_LABEL = '开始预览（Tab）';
+const PREVIEW_CLOSE_LABEL = '关闭预览（Tab）';
+const DITHER_ALGORITHM_TOOLTIPS = {
+    'floyd-steinberg': 'Floyd Steinberg：经典扩散，细节保留强，对比鲜明。优点：层次感好、通用性强。缺点：噪点更重，黑白图更容易显脏。',
+    'false-floyd-steinberg': 'False Floyd Steinberg：比 Floyd 更轻量，颗粒更规整。优点：速度快、噪点略少。缺点：细节和过渡通常不如 Floyd 自然。',
+    'minimized-average-error': 'Minimized Average Error：扩散范围较大，整体更平滑。优点：大面积渐变更柔和。缺点：纹理感偏强，算法更重。',
+    stucki: 'Stucki：高质量大核扩散。优点：层次平滑、细节丰富。缺点：颗粒更密，容易出现明显纹理。',
+    atkinson: 'Atkinson：更克制、更干净。优点：黑白设备、图标、文字感内容通常更舒服。缺点：细节会比 Floyd 少一点。',
+    burkes: 'Burkes：在细节和干净度之间比较均衡。优点：常作为 Floyd 的柔和替代。缺点：极端高对比下仍会有颗粒感。',
+    sierra: 'Sierra：扩散更宽，过渡更自然。优点：灰阶和平滑区域表现好。缺点：有时会显得偏软，纹理感略重。',
+    'two-row': 'Two Row：两行扩散，计算量适中。优点：比 Floyd 更稳一点，速度和效果平衡。缺点：极细节表现通常不如大核算法。',
+    'sierra-lite': 'Sierra Lite：轻量、克制。优点：速度快，颗粒较少，适合资源受限场景。缺点：过渡和细节通常弱于 Floyd / Burkes。'
+};
+
+const DITHER_ALGORITHM_LABELS = {
+    'floyd-steinberg': 'Floyd Steinberg',
+    'false-floyd-steinberg': 'False Floyd Steinberg',
+    'minimized-average-error': 'Minimized Average Error',
+    stucki: 'Stucki',
+    atkinson: 'Atkinson',
+    burkes: 'Burkes',
+    sierra: 'Sierra',
+    'two-row': 'Two Row',
+    'sierra-lite': 'Sierra Lite'
+};
 
 async function initializePaletteOptions() {
     const manifestUrl = './act/palettes.json';
@@ -107,6 +134,23 @@ function isTypingElement(target) {
     );
 }
 
+function isTextEntryElement(target) {
+    if (!target) {
+        return false;
+    }
+
+    if (target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return true;
+    }
+
+    if (target.tagName !== 'INPUT') {
+        return false;
+    }
+
+    const inputType = (target.getAttribute('type') || '').toLowerCase();
+    return !['button', 'checkbox', 'color', 'file', 'hidden', 'radio', 'range', 'reset', 'submit'].includes(inputType);
+}
+
 function syncOuterMaskWithPreviewMode() {
     const shouldShowOuterMask = state.previewMode === 'fit';
     state.showOuterMask = shouldShowOuterMask;
@@ -114,6 +158,188 @@ function syncOuterMaskWithPreviewMode() {
         refs.showOuterMaskInput.checked = shouldShowOuterMask;
     }
     updateOverlayVisibility();
+}
+
+function isPreviewModeActive() {
+    return state.previewMode === 'actual';
+}
+
+function updatePreviewToggleButtonText() {
+    if (!refs.previewToggleBtn) {
+        return;
+    }
+
+    refs.previewToggleBtn.textContent = isPreviewModeActive() ? PREVIEW_CLOSE_LABEL : PREVIEW_START_LABEL;
+    refs.previewToggleBtn.classList.toggle('is-active', isPreviewModeActive());
+    refs.previewToggleBtn.disabled = !state.cropper || !state.targetWidth || !state.targetHeight;
+}
+
+function updateOrientationButtonText() {
+    if (!refs.swapDimensionsBtn) {
+        return;
+    }
+
+    const width = Number.parseInt(refs.widthInput.value, 10) || state.targetWidth || 0;
+    const height = Number.parseInt(refs.heightInput.value, 10) || state.targetHeight || 0;
+
+    refs.swapDimensionsBtn.textContent = width > height ? '切换竖屏（Q）' : '切换横屏（Q）';
+}
+
+function getDitherAlgorithmTooltipText(algorithmName) {
+    return DITHER_ALGORITHM_TOOLTIPS[algorithmName] || '';
+}
+
+function showDitherAlgorithmTooltip(target, algorithmName) {
+    if (!refs.ditherAlgorithmTooltip || !target) {
+        return;
+    }
+
+    refs.ditherAlgorithmTooltip.textContent = getDitherAlgorithmTooltipText(algorithmName);
+    refs.ditherAlgorithmTooltip.hidden = false;
+
+    const tooltipRect = refs.ditherAlgorithmTooltip.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const gap = 10;
+    let left = targetRect.right + gap;
+    let top = targetRect.top;
+
+    if (left + tooltipRect.width > window.innerWidth - 12) {
+        left = Math.max(12, targetRect.left - tooltipRect.width - gap);
+    }
+    if (top + tooltipRect.height > window.innerHeight - 12) {
+        top = Math.max(12, window.innerHeight - tooltipRect.height - 12);
+    }
+
+    refs.ditherAlgorithmTooltip.style.left = `${left}px`;
+    refs.ditherAlgorithmTooltip.style.top = `${top}px`;
+}
+
+function hideDitherAlgorithmTooltip() {
+    if (!refs.ditherAlgorithmTooltip) {
+        return;
+    }
+    refs.ditherAlgorithmTooltip.hidden = true;
+}
+
+function syncDitherAlgorithmUI() {
+    if (refs.ditherAlgorithmTrigger) {
+        const algorithmName = refs.ditherAlgorithmSelect?.value || DEFAULT_DITHER_ALGORITHM;
+        refs.ditherAlgorithmTrigger.textContent = DITHER_ALGORITHM_LABELS[algorithmName] || '选择算法';
+    }
+
+    refs.ditherAlgorithmOptions?.querySelectorAll('.custom-select-option').forEach((option) => {
+        option.classList.toggle('is-active', option.dataset.value === refs.ditherAlgorithmSelect?.value);
+    });
+
+}
+
+function setScanMode(nextMode) {
+    const normalized = nextMode === 'raster' ? 'raster' : 'serpentine';
+    state.scanMode = normalized;
+    refs.scanModeRasterBtn?.classList.toggle('is-active', normalized === 'raster');
+    refs.scanModeSerpentineBtn?.classList.toggle('is-active', normalized === 'serpentine');
+}
+
+function isSerpentineScanEnabled() {
+    return state.scanMode !== 'raster';
+}
+
+function closeDitherAlgorithmMenu() {
+    if (!refs.ditherAlgorithmMenu || !refs.ditherAlgorithmTrigger) {
+        return;
+    }
+    refs.ditherAlgorithmMenu.hidden = true;
+    refs.ditherAlgorithmTrigger.setAttribute('aria-expanded', 'false');
+    refs.ditherAlgorithmPicker?.classList.remove('is-open');
+    refs.sidePanel?.classList.remove('is-popover-open');
+    hideDitherAlgorithmTooltip();
+}
+
+function openDitherAlgorithmMenu() {
+    if (!refs.ditherAlgorithmMenu || !refs.ditherAlgorithmTrigger || refs.ditherAlgorithmTrigger.disabled) {
+        return;
+    }
+    refs.ditherAlgorithmMenu.hidden = false;
+    refs.ditherAlgorithmTrigger.setAttribute('aria-expanded', 'true');
+    refs.ditherAlgorithmPicker?.classList.add('is-open');
+    refs.sidePanel?.classList.add('is-popover-open');
+    syncDitherAlgorithmUI();
+}
+
+function updatePreviewEditingLockState() {
+    const previewActive = isPreviewModeActive();
+    refs.editorStage?.classList.toggle('preview-mode-active', previewActive);
+
+    if (state.cropper) {
+        state.cropper.setDragMode(previewActive ? 'none' : 'move');
+    }
+
+    [
+        refs.rotateLeftBtn,
+        refs.rotateRightBtn,
+        refs.flipHBtn,
+        refs.flipVBtn,
+        refs.fitToCropBtn,
+        refs.resetBtn,
+        refs.zoomInput
+    ].forEach((control) => {
+        if (control) {
+            control.disabled = previewActive || !state.cropper;
+        }
+    });
+
+    updatePreviewToggleButtonText();
+    updateOrientationButtonText();
+    refs.scanModeRasterBtn && (refs.scanModeRasterBtn.disabled = !refs.ditherEnabledInput.checked);
+    refs.scanModeSerpentineBtn && (refs.scanModeSerpentineBtn.disabled = !refs.ditherEnabledInput.checked);
+}
+
+function applyPreviewMode(nextMode, options = {}) {
+    const { pushHistory = true } = options;
+
+    if (nextMode !== 'fit' && nextMode !== 'actual') {
+        return;
+    }
+
+    const prevCropBoxData = state.cropper ? state.cropper.getCropBoxData() : null;
+    const prevCanvasData = state.cropper ? state.cropper.getCanvasData() : null;
+    state.previewMode = nextMode;
+    syncOuterMaskWithPreviewMode();
+
+    if (state.cropper) {
+        applyFixedCropBox(state.previewMode === 'actual');
+
+        const nextCropBoxData = state.cropper.getCropBoxData();
+        if (
+            prevCropBoxData &&
+            prevCanvasData &&
+            nextCropBoxData &&
+            prevCropBoxData.width > 0 &&
+            prevCropBoxData.height > 0
+        ) {
+            const relLeft = (prevCanvasData.left - prevCropBoxData.left) / prevCropBoxData.width;
+            const relTop = (prevCanvasData.top - prevCropBoxData.top) / prevCropBoxData.height;
+            const relWidth = prevCanvasData.width / prevCropBoxData.width;
+            const relHeight = prevCanvasData.height / prevCropBoxData.height;
+
+            state.cropper.setCanvasData({
+                left: nextCropBoxData.left + relLeft * nextCropBoxData.width,
+                top: nextCropBoxData.top + relTop * nextCropBoxData.height,
+                width: Math.max(1, relWidth * nextCropBoxData.width),
+                height: Math.max(1, relHeight * nextCropBoxData.height)
+            });
+        }
+    }
+
+    updatePreviewEditingLockState();
+    updatePreviewCanvasPresentation();
+    updateDitherUIState();
+    syncZoomControls();
+    schedulePreviewRender();
+    persistUserSettings();
+    if (pushHistory) {
+        pushHistorySnapshot();
+    }
 }
 
 function getHistorySnapshot() {
@@ -217,8 +443,11 @@ function applyHistorySnapshot(snapshot) {
     }
 
     updateInfo();
+    updateOrientationButtonText();
+    updatePreviewEditingLockState();
     updatePreviewCanvasPresentation();
     updateDitherUIState();
+    syncZoomControls();
     schedulePreviewRender();
     persistUserSettings();
     state.isApplyingHistory = false;
@@ -310,6 +539,52 @@ function setWorkspacePanOffset(left, top) {
     }
 }
 
+function swapOrientation(options = {}) {
+    const { pushHistory = true } = options;
+    const width = refs.widthInput.value;
+    const height = refs.heightInput.value;
+    const hadActivePreset = Boolean(state.activePresetId);
+
+    refs.widthInput.value = height;
+    refs.heightInput.value = width;
+
+    if (hadActivePreset) {
+        const nextWidth = Number.parseInt(refs.widthInput.value, 10);
+        const nextHeight = Number.parseInt(refs.heightInput.value, 10);
+        if (nextWidth > 0 && nextHeight > 0) {
+            state.targetWidth = nextWidth;
+            state.targetHeight = nextHeight;
+            if (state.cropper) {
+                state.cropper.setAspectRatio(nextWidth / nextHeight);
+                applyFixedCropBox(state.previewMode === 'actual');
+                fitImageToCropBox();
+                schedulePreviewRender();
+            }
+            updateInfo();
+        }
+        updateCustomSizeVisibility();
+        updateOrientationButtonText();
+        updatePreviewEditingLockState();
+        persistUserSettings();
+        if (pushHistory) {
+            pushHistorySnapshot();
+        }
+        return;
+    }
+
+    syncPresetSelection();
+    tryAutoApplyResolution();
+    if (state.cropper) {
+        fitImageToCropBox();
+    }
+    updateOrientationButtonText();
+    updatePreviewEditingLockState();
+    persistUserSettings();
+    if (pushHistory) {
+        pushHistorySnapshot();
+    }
+}
+
 function persistUserSettings() {
     const ditherEnabled = refs.paletteSelect.value !== NO_PALETTE_VALUE;
     if (refs.ditherEnabledInput) {
@@ -324,6 +599,8 @@ function persistUserSettings() {
         showOuterMask: Boolean(refs.showOuterMaskInput?.checked ?? true),
         ditherEnabled,
         palette: refs.paletteSelect.value || '4-color.act',
+        ditherAlgorithm: refs.ditherAlgorithmSelect?.value || DEFAULT_DITHER_ALGORITHM,
+        scanMode: state.scanMode || 'serpentine',
         previewMode: state.previewMode,
         adjustmentState: {
             exposure: state.adjustmentState.exposure,
@@ -382,6 +659,10 @@ function loadUserSettings() {
         if (parsed.palette) {
             refs.paletteSelect.value = parsed.palette;
         }
+        if (refs.ditherAlgorithmSelect) {
+            refs.ditherAlgorithmSelect.value = parsed.ditherAlgorithm || DEFAULT_DITHER_ALGORITHM;
+        }
+        setScanMode(parsed.scanMode || (parsed.serpentine === false ? 'raster' : 'serpentine'));
         if (refs.ditherEnabledInput) {
             refs.ditherEnabledInput.checked = refs.paletteSelect.value !== NO_PALETTE_VALUE;
         }
@@ -427,13 +708,21 @@ function bindFileInteractions() {
         refs.dropZone.classList.remove('drag-over');
         normalizeResolutionForImport();
         loadImage(event.dataTransfer.files[0]);
-        window.setTimeout(pushHistorySnapshot, 260);
+        window.setTimeout(() => {
+            updatePreviewEditingLockState();
+            syncZoomControls();
+            pushHistorySnapshot();
+        }, 260);
     });
 
     refs.fileInput.addEventListener('change', (event) => {
         normalizeResolutionForImport();
         loadImage(event.target.files[0]);
-        window.setTimeout(pushHistorySnapshot, 260);
+        window.setTimeout(() => {
+            updatePreviewEditingLockState();
+            syncZoomControls();
+            pushHistorySnapshot();
+        }, 260);
     });
 
     document.addEventListener('paste', (event) => {
@@ -455,7 +744,11 @@ function bindFileInteractions() {
         event.preventDefault();
         normalizeResolutionForImport();
         loadImage(imageFile);
-        window.setTimeout(pushHistorySnapshot, 260);
+        window.setTimeout(() => {
+            updatePreviewEditingLockState();
+            syncZoomControls();
+            pushHistorySnapshot();
+        }, 260);
     });
 }
 
@@ -479,48 +772,19 @@ function bindResolutionControls() {
         }
 
         applyPresetSelection(value);
+        updateOrientationButtonText();
+        updatePreviewEditingLockState();
         persistUserSettings();
         pushHistorySnapshot();
     });
 
-    refs.swapDimensionsBtn.addEventListener('click', () => {
-        const width = refs.widthInput.value;
-        const height = refs.heightInput.value;
-        const hadActivePreset = Boolean(state.activePresetId);
-
-        refs.widthInput.value = height;
-        refs.heightInput.value = width;
-
-        // When current selection is a preset, keep preset mode after swap
-        // instead of downgrading to manual mode when reverse size has no preset.
-        if (hadActivePreset) {
-            const nextWidth = Number.parseInt(refs.widthInput.value, 10);
-            const nextHeight = Number.parseInt(refs.heightInput.value, 10);
-            if (nextWidth > 0 && nextHeight > 0) {
-                state.targetWidth = nextWidth;
-                state.targetHeight = nextHeight;
-                if (state.cropper) {
-                    state.cropper.setAspectRatio(nextWidth / nextHeight);
-                    applyFixedCropBox();
-                    schedulePreviewRender();
-                }
-                updateInfo();
-            }
-            updateCustomSizeVisibility();
-            persistUserSettings();
-            pushHistorySnapshot();
-            return;
-        }
-
-        syncPresetSelection();
-        tryAutoApplyResolution();
-        persistUserSettings();
-        pushHistorySnapshot();
-    });
+    refs.swapDimensionsBtn.addEventListener('click', () => swapOrientation());
 
     refs.widthInput.addEventListener('input', () => {
         syncPresetSelection();
         tryAutoApplyResolution();
+        updateOrientationButtonText();
+        updatePreviewEditingLockState();
         persistUserSettings();
         pushHistorySnapshot();
     });
@@ -528,6 +792,8 @@ function bindResolutionControls() {
     refs.heightInput.addEventListener('input', () => {
         syncPresetSelection();
         tryAutoApplyResolution();
+        updateOrientationButtonText();
+        updatePreviewEditingLockState();
         persistUserSettings();
         pushHistorySnapshot();
     });
@@ -592,53 +858,92 @@ function bindAdjustmentControls() {
         schedulePreviewRender();
     });
 
-    const applyPreviewMode = (nextMode) => {
-        if (nextMode !== 'fit' && nextMode !== 'actual') {
-            return;
-        }
-        const prevCropBoxData = state.cropper ? state.cropper.getCropBoxData() : null;
-        const prevCanvasData = state.cropper ? state.cropper.getCanvasData() : null;
-        state.previewMode = nextMode;
-        syncOuterMaskWithPreviewMode();
-        if (state.cropper) {
-            applyFixedCropBox();
-
-            const nextCropBoxData = state.cropper.getCropBoxData();
-            if (
-                prevCropBoxData &&
-                prevCanvasData &&
-                nextCropBoxData &&
-                prevCropBoxData.width > 0 &&
-                prevCropBoxData.height > 0
-            ) {
-                // Keep the same composition ratio to avoid mode-toggle drift.
-                const relLeft = (prevCanvasData.left - prevCropBoxData.left) / prevCropBoxData.width;
-                const relTop = (prevCanvasData.top - prevCropBoxData.top) / prevCropBoxData.height;
-                const relWidth = prevCanvasData.width / prevCropBoxData.width;
-                const relHeight = prevCanvasData.height / prevCropBoxData.height;
-
-                state.cropper.setCanvasData({
-                    left: nextCropBoxData.left + relLeft * nextCropBoxData.width,
-                    top: nextCropBoxData.top + relTop * nextCropBoxData.height,
-                    width: Math.max(1, relWidth * nextCropBoxData.width),
-                    height: Math.max(1, relHeight * nextCropBoxData.height)
-                });
-            }
-        }
-        updatePreviewCanvasPresentation();
-        updateDitherUIState();
-        schedulePreviewRender();
-        persistUserSettings();
-        pushHistorySnapshot();
-    };
-
-    refs.previewModeActualBtn?.addEventListener('click', () => applyPreviewMode('actual'));
-    refs.previewModeFitBtn?.addEventListener('click', () => applyPreviewMode('fit'));
+    refs.previewToggleBtn?.addEventListener('click', () => {
+        applyPreviewMode(isPreviewModeActive() ? 'fit' : 'actual');
+    });
 
     refs.paletteSelect.addEventListener('change', () => {
         if (refs.ditherEnabledInput) {
             refs.ditherEnabledInput.checked = refs.paletteSelect.value !== NO_PALETTE_VALUE;
         }
+        schedulePreviewRender();
+        updateDitherUIState();
+        syncDitherAlgorithmUI();
+        persistUserSettings();
+        pushHistorySnapshot();
+    });
+
+    refs.ditherAlgorithmSelect?.addEventListener('change', () => {
+        schedulePreviewRender();
+        updateDitherUIState();
+        syncDitherAlgorithmUI();
+        persistUserSettings();
+        pushHistorySnapshot();
+    });
+
+    refs.ditherAlgorithmTrigger?.addEventListener('click', () => {
+        if (refs.ditherAlgorithmMenu?.hidden) {
+            openDitherAlgorithmMenu();
+        } else {
+            closeDitherAlgorithmMenu();
+        }
+    });
+
+    refs.ditherAlgorithmTrigger?.addEventListener('mouseenter', () => {
+        showDitherAlgorithmTooltip(refs.ditherAlgorithmTrigger, refs.ditherAlgorithmSelect?.value || DEFAULT_DITHER_ALGORITHM);
+    });
+    refs.ditherAlgorithmTrigger?.addEventListener('mouseleave', () => {
+        if (refs.ditherAlgorithmMenu?.hidden) {
+            hideDitherAlgorithmTooltip();
+        }
+    });
+    refs.ditherAlgorithmTrigger?.addEventListener('focus', () => {
+        showDitherAlgorithmTooltip(refs.ditherAlgorithmTrigger, refs.ditherAlgorithmSelect?.value || DEFAULT_DITHER_ALGORITHM);
+    });
+    refs.ditherAlgorithmTrigger?.addEventListener('blur', () => {
+        if (refs.ditherAlgorithmMenu?.hidden) {
+            hideDitherAlgorithmTooltip();
+        }
+    });
+
+    refs.ditherAlgorithmOptions?.querySelectorAll('.custom-select-option').forEach((option) => {
+        option.addEventListener('mouseenter', () => {
+            const algorithmName = option.dataset.value || DEFAULT_DITHER_ALGORITHM;
+            showDitherAlgorithmTooltip(option, algorithmName);
+        });
+
+        option.addEventListener('focus', () => {
+            const algorithmName = option.dataset.value || DEFAULT_DITHER_ALGORITHM;
+            showDitherAlgorithmTooltip(option, algorithmName);
+        });
+
+        option.addEventListener('mouseleave', () => {
+            hideDitherAlgorithmTooltip();
+        });
+
+        option.addEventListener('blur', () => {
+            hideDitherAlgorithmTooltip();
+        });
+
+        option.addEventListener('click', () => {
+            if (refs.ditherAlgorithmSelect) {
+                refs.ditherAlgorithmSelect.value = option.dataset.value || DEFAULT_DITHER_ALGORITHM;
+                refs.ditherAlgorithmSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            closeDitherAlgorithmMenu();
+        });
+    });
+
+    refs.scanModeRasterBtn?.addEventListener('click', () => {
+        setScanMode('raster');
+        schedulePreviewRender();
+        updateDitherUIState();
+        persistUserSettings();
+        pushHistorySnapshot();
+    });
+
+    refs.scanModeSerpentineBtn?.addEventListener('click', () => {
+        setScanMode('serpentine');
         schedulePreviewRender();
         updateDitherUIState();
         persistUserSettings();
@@ -678,16 +983,33 @@ function bindAdjustmentControls() {
         persistUserSettings();
         pushHistorySnapshot();
     });
+
+    refs.zoomInput?.addEventListener('input', () => {
+        if (refs.zoomInput.disabled) {
+            return;
+        }
+        if (applyZoomPercent(Number.parseInt(refs.zoomInput.value, 10) || 100)) {
+            persistUserSettings();
+        }
+    });
+
+    refs.zoomInput?.addEventListener('change', () => {
+        if (!refs.zoomInput.disabled) {
+            pushHistorySnapshot();
+        }
+    });
 }
 
 function bindEditorActions() {
     refs.exportBtn.addEventListener('click', exportBMP);
     refs.resetBtn.addEventListener('click', () => {
         resetEditor();
+        updatePreviewEditingLockState();
         pushHistorySnapshot();
     });
     refs.newImageBtn.addEventListener('click', () => {
         clearAll();
+        updatePreviewEditingLockState();
         pushHistorySnapshot();
     });
 
@@ -700,6 +1022,7 @@ function bindEditorActions() {
         state.cropper.rotate(-90);
         applyFixedCropBox();
         updateInfo();
+        syncZoomControls();
         schedulePreviewRender();
         pushHistorySnapshot();
     });
@@ -713,6 +1036,7 @@ function bindEditorActions() {
         state.cropper.rotate(90);
         applyFixedCropBox();
         updateInfo();
+        syncZoomControls();
         schedulePreviewRender();
         pushHistorySnapshot();
     });
@@ -725,6 +1049,7 @@ function bindEditorActions() {
         state.scaleX *= -1;
         state.cropper.scaleX(state.scaleX);
         applyFixedCropBox();
+        syncZoomControls();
         schedulePreviewRender();
         pushHistorySnapshot();
     });
@@ -737,6 +1062,7 @@ function bindEditorActions() {
         state.scaleY *= -1;
         state.cropper.scaleY(state.scaleY);
         applyFixedCropBox();
+        syncZoomControls();
         schedulePreviewRender();
         pushHistorySnapshot();
     });
@@ -830,8 +1156,47 @@ function bindKeyboardShortcuts() {
         return false;
     };
 
+    const handleToolbarShortcuts = (event) => {
+        if (event[HANDLED_SHORTCUT_FLAG]) {
+            return true;
+        }
+
+        const activeElement = document.activeElement;
+        const target = event.target;
+        const key = event.key.toLowerCase();
+
+        if (isTextEntryElement(activeElement) || isTextEntryElement(target)) {
+            return false;
+        }
+
+        if (!event.ctrlKey && !event.metaKey && !event.altKey && key === 'q') {
+            event[HANDLED_SHORTCUT_FLAG] = true;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            event.returnValue = false;
+            swapOrientation();
+            return true;
+        }
+
+        if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'Tab') {
+            event[HANDLED_SHORTCUT_FLAG] = true;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            event.returnValue = false;
+            applyPreviewMode(isPreviewModeActive() ? 'fit' : 'actual');
+            return true;
+        }
+
+        return false;
+    };
+
     // Capture stage interception to beat browser defaults like Ctrl+N.
     window.addEventListener('keydown', (event) => {
+        if (handleToolbarShortcuts(event)) {
+            return;
+        }
         handleGlobalShortcuts(event);
     }, true);
 
@@ -841,9 +1206,14 @@ function bindKeyboardShortcuts() {
         }
 
         const activeElement = document.activeElement;
+        const isTypingTarget = isTypingElement(activeElement);
         const key = event.key.toLowerCase();
 
         if (!state.cropper) {
+            return;
+        }
+
+        if (isPreviewModeActive()) {
             return;
         }
 
@@ -928,7 +1298,8 @@ function fitImageToCropBox() {
         height: nextHeight
     });
 
-    applyFixedCropBox();
+    applyFixedCropBox(state.previewMode === 'actual');
+    syncZoomControls();
     schedulePreviewRender();
     return true;
 }
@@ -940,15 +1311,36 @@ function bindWindowInteractions() {
         }
     }, { passive: false });
 
+    refs.editorStage?.addEventListener('wheel', (event) => {
+        if (!isPreviewModeActive()) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+    }, { passive: false, capture: true });
+
     refs.editorStage?.addEventListener('contextmenu', (event) => {
         event.preventDefault();
+    });
+
+    document.addEventListener('pointerdown', (event) => {
+        if (!refs.ditherAlgorithmPicker?.contains(event.target)) {
+            closeDitherAlgorithmMenu();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeDitherAlgorithmMenu();
+        }
     });
 
     window.addEventListener('resize', () => {
         clearTimeout(state.resizeTimer);
         state.resizeTimer = window.setTimeout(() => {
             if (state.cropper) {
-                applyFixedCropBox();
+                applyFixedCropBox(state.previewMode === 'actual');
+                syncZoomControls();
                 schedulePreviewRender();
                 setFloatingPreviewPosition(state.previewPosition.left, state.previewPosition.top);
             } else {
@@ -1030,6 +1422,9 @@ function bindWindowInteractions() {
     }, true);
 
     refs.editorStage.addEventListener('dblclick', () => {
+        if (isPreviewModeActive()) {
+            return;
+        }
         fitImageToCropBox();
     });
 
@@ -1094,8 +1489,15 @@ async function initialize() {
 
     updateInfo();
     updateCustomSizeVisibility();
+    if (refs.ditherAlgorithmSelect && !refs.ditherAlgorithmSelect.value) {
+        refs.ditherAlgorithmSelect.value = DEFAULT_DITHER_ALGORITHM;
+    }
+    setScanMode(state.scanMode || 'serpentine');
     updateDitherUIState();
+    syncDitherAlgorithmUI();
     syncOuterMaskWithPreviewMode();
+    updateOrientationButtonText();
+    updatePreviewEditingLockState();
     if (refs.ditherEnabledInput) {
         refs.ditherEnabledInput.checked = refs.paletteSelect.value !== NO_PALETTE_VALUE;
     }
@@ -1106,12 +1508,9 @@ async function initialize() {
     setFloatingPreviewPosition(state.previewPosition.left, state.previewPosition.top);
     initializeSidePanelPosition();
     setWorkspacePanOffset(0, 0);
+    syncZoomControls();
     persistUserSettings();
     pushHistorySnapshot();
 }
 
 initialize();
-
-
-
-

@@ -21,6 +21,8 @@ export const refs = {
     flipHBtn: document.getElementById('flipH'),
     flipVBtn: document.getElementById('flipV'),
     fitToCropBtn: document.getElementById('fitToCropBtn'),
+    zoomInput: document.getElementById('zoomInput'),
+    zoomValue: document.getElementById('zoomValue'),
     resetBtn: document.getElementById('resetBtn'),
     exportBtn: document.getElementById('exportBtn'),
     newImageBtn: document.getElementById('newImageBtn'),
@@ -37,9 +39,17 @@ export const refs = {
     saturationValue: document.getElementById('saturationValue'),
     resetAdjustmentsBtn: document.getElementById('resetAdjustmentsBtn'),
     ditherEnabledInput: document.getElementById('ditherEnabled'),
+    ditherAlgorithmSelect: document.getElementById('ditherAlgorithmSelect'),
+    ditherAlgorithmPicker: document.getElementById('ditherAlgorithmPicker'),
+    ditherAlgorithmTrigger: document.getElementById('ditherAlgorithmTrigger'),
+    ditherAlgorithmMenu: document.getElementById('ditherAlgorithmMenu'),
+    ditherAlgorithmOptions: document.getElementById('ditherAlgorithmOptions'),
+    ditherAlgorithmTooltip: document.getElementById('ditherAlgorithmTooltip'),
+    scanModeToggle: document.getElementById('scanModeToggle'),
+    scanModeRasterBtn: document.getElementById('scanModeRasterBtn'),
+    scanModeSerpentineBtn: document.getElementById('scanModeSerpentineBtn'),
     previewModeToggle: document.getElementById('previewModeToggle'),
-    previewModeActualBtn: document.getElementById('previewModeActualBtn'),
-    previewModeFitBtn: document.getElementById('previewModeFitBtn'),
+    previewToggleBtn: document.getElementById('previewToggleBtn'),
     paletteSelect: document.getElementById('paletteSelect'),
     floatingPreview: document.getElementById('floatingPreview'),
     previewCanvas: document.getElementById('previewCanvas'),
@@ -67,6 +77,7 @@ export const state = {
     previewDragState: null,
     previewPosition: { left: 18, top: 18 },
     previewMode: 'fit',
+    scanMode: 'serpentine',
     showOuterMask: true,
     isColorPicking: false,
     suppressDitherPreview: false,
@@ -131,6 +142,3 @@ export function revokeOriginalImageURL() {
         state.originalImageURL = '';
     }
 }
-
-
-

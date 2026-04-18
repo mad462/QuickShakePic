@@ -1,11 +1,98 @@
-import { refs, state } from './state.js?v=20260417';
+import { refs, state } from './state.js?v=20260418-3';
 import {
     clamp,
     clampChannel,
     formatSignedValue,
     hslToRgb,
     rgbToHsl
-} from './utils.js?v=20260417';
+} from './utils.js?v=20260418-3';
+
+export const DEFAULT_DITHER_ALGORITHM = 'atkinson';
+
+const ERROR_DIFFUSION_MAP = {
+    'floyd-steinberg': [
+        [1, 0, 7 / 16],
+        [-1, 1, 3 / 16],
+        [0, 1, 5 / 16],
+        [1, 1, 1 / 16]
+    ],
+    'false-floyd-steinberg': [
+        [1, 0, 3 / 8],
+        [0, 1, 3 / 8],
+        [1, 1, 1 / 4]
+    ],
+    'minimized-average-error': [
+        [1, 0, 7 / 48],
+        [2, 0, 5 / 48],
+        [-2, 1, 3 / 48],
+        [-1, 1, 5 / 48],
+        [0, 1, 7 / 48],
+        [1, 1, 5 / 48],
+        [2, 1, 3 / 48],
+        [-2, 2, 1 / 48],
+        [-1, 2, 3 / 48],
+        [0, 2, 5 / 48],
+        [1, 2, 3 / 48],
+        [2, 2, 1 / 48]
+    ],
+    stucki: [
+        [1, 0, 8 / 42],
+        [2, 0, 4 / 42],
+        [-2, 1, 2 / 42],
+        [-1, 1, 4 / 42],
+        [0, 1, 8 / 42],
+        [1, 1, 4 / 42],
+        [2, 1, 2 / 42],
+        [-2, 2, 1 / 42],
+        [-1, 2, 2 / 42],
+        [0, 2, 4 / 42],
+        [1, 2, 2 / 42],
+        [2, 2, 1 / 42]
+    ],
+    atkinson: [
+        [1, 0, 1 / 8],
+        [2, 0, 1 / 8],
+        [-1, 1, 1 / 8],
+        [0, 1, 1 / 8],
+        [1, 1, 1 / 8],
+        [0, 2, 1 / 8]
+    ],
+    burkes: [
+        [1, 0, 8 / 32],
+        [2, 0, 4 / 32],
+        [-2, 1, 2 / 32],
+        [-1, 1, 4 / 32],
+        [0, 1, 8 / 32],
+        [1, 1, 4 / 32],
+        [2, 1, 2 / 32]
+    ],
+    sierra: [
+        [1, 0, 5 / 32],
+        [2, 0, 3 / 32],
+        [-2, 1, 2 / 32],
+        [-1, 1, 4 / 32],
+        [0, 1, 5 / 32],
+        [1, 1, 4 / 32],
+        [2, 1, 2 / 32],
+        [-1, 2, 2 / 32],
+        [0, 2, 3 / 32],
+        [1, 2, 2 / 32]
+    ],
+    'two-row': [
+        [1, 0, 4 / 16],
+        [2, 0, 3 / 16],
+        [-2, 1, 1 / 16],
+        [-1, 1, 2 / 16],
+        [0, 1, 3 / 16],
+        [1, 1, 2 / 16],
+        [2, 1, 1 / 16]
+    ],
+    'sierra-lite': [
+        [1, 0, 2 / 4],
+        [-1, 1, 1 / 4],
+        [0, 1, 1 / 4]
+    ]
+};
 
 /** 后续会多次/大块 getImageData 读回像素时，避免 Canvas2D 性能提示并选用更适合读回的实现 */
 const CANVAS_2D_READBACK = { willReadFrequently: true };
@@ -358,6 +445,10 @@ export function getSelectedPalette(paletteName) {
     return paletteStore[paletteName] || paletteStore[DEFAULT_PALETTE_NAME] || DEFAULT_PALETTE;
 }
 
+export function getDitherAlgorithm(algorithmName) {
+    return ERROR_DIFFUSION_MAP[algorithmName] || ERROR_DIFFUSION_MAP[DEFAULT_DITHER_ALGORITHM];
+}
+
 export function findNearestPaletteColor(red, green, blue, palette) {
     let bestIndex = 0;
     let bestDistance = Number.POSITIVE_INFINITY;
@@ -392,7 +483,12 @@ export function addError(buffer, width, height, x, y, errorRed, errorGreen, erro
     buffer[offset + 2] += errorBlue * factor;
 }
 
-export function quantizeCanvasToIndexed(canvas, paletteName) {
+export function quantizeCanvasToIndexed(
+    canvas,
+    paletteName,
+    algorithmName = DEFAULT_DITHER_ALGORITHM,
+    serpentine = false
+) {
     const ctx = canvas.getContext('2d', CANVAS_2D_READBACK);
     const width = canvas.width;
     const height = canvas.height;
@@ -400,6 +496,7 @@ export function quantizeCanvasToIndexed(canvas, paletteName) {
     const pixels = imageData.data;
     const working = new Float32Array(pixels.length);
     const palette = getSelectedPalette(paletteName);
+    const diffusionKernel = getDitherAlgorithm(algorithmName);
     const indices = new Uint8Array(width * height);
 
     for (let index = 0; index < pixels.length; index++) {
@@ -407,7 +504,12 @@ export function quantizeCanvasToIndexed(canvas, paletteName) {
     }
 
     for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
+        const reverseScan = serpentine && (y % 2 === 1);
+        const xStart = reverseScan ? width - 1 : 0;
+        const xEnd = reverseScan ? -1 : width;
+        const xStep = reverseScan ? -1 : 1;
+
+        for (let x = xStart; x !== xEnd; x += xStep) {
             const offset = (y * width + x) * 4;
             const red = clampChannel(working[offset]);
             const green = clampChannel(working[offset + 1]);
@@ -425,10 +527,10 @@ export function quantizeCanvasToIndexed(canvas, paletteName) {
             const errorRed = red - nearestColor[0];
             const errorGreen = green - nearestColor[1];
             const errorBlue = blue - nearestColor[2];
-            addError(working, width, height, x + 1, y, errorRed, errorGreen, errorBlue, 7 / 16);
-            addError(working, width, height, x - 1, y + 1, errorRed, errorGreen, errorBlue, 3 / 16);
-            addError(working, width, height, x, y + 1, errorRed, errorGreen, errorBlue, 5 / 16);
-            addError(working, width, height, x + 1, y + 1, errorRed, errorGreen, errorBlue, 1 / 16);
+            diffusionKernel.forEach(([dx, dy, factor]) => {
+                const adjustedDx = reverseScan ? -dx : dx;
+                addError(working, width, height, x + adjustedDx, y + dy, errorRed, errorGreen, errorBlue, factor);
+            });
         }
     }
 

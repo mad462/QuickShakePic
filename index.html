@@ -7,7 +7,6 @@
     <title>QuickShakePic</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
     <link rel="stylesheet" href="./assets/css/styles.css">
-    <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
 </head>
 
 <body>
@@ -76,8 +75,6 @@
                             <label class="sr-only" for="presetSize">预设尺寸</label>
                             <select id="presetSize"></select>
                         </div>
-                        <button class="compact-side-btn icon-only" type="button" id="swapDimensionsBtn" title="横竖互换"
-                            aria-label="横竖互换">⇄</button>
                     </div>
                     <div class="custom-size-fields" id="customSizeFields">
                         <div class="field">
@@ -115,6 +112,60 @@
                             <span class="icon">⛶</span>
                         </button>
                     </div>
+                    <label class="slider-field zoom-slider-field" for="zoomInput">
+                        <span>缩放</span>
+                        <input type="range" id="zoomInput" min="25" max="400" step="1" value="100">
+                        <strong id="zoomValue">100%</strong>
+                    </label>
+                </section>
+
+                <section class="panel-section">
+                    <h2>抖动与色板</h2>
+                    <div class="field" style="margin-bottom: 10px;">
+                        <div class="compact-color-row">
+                            <input class="color-swatch-input" type="color" id="backgroundColorInput" value="#ffffff"
+                                title="画布填充色" aria-label="画布填充色">
+                            <select id="paletteSelect" class="compact-select compact-select-palette">
+                                <option value="__none__">不使用调色板</option>
+                                <option value="4-color.act" selected>4-color.act</option>
+                                <option value="6-color.act">6-color.act</option>
+                                <option value="Black-White.act">Black-White.act</option>
+                                <option value="Black-White-Red.act">Black-White-Red.act</option>
+                                <option value="Black-White-Yellow.act">Black-White-Yellow.act</option>
+                                <option value="N-color.act">N-color.act</option>
+                            </select>
+                            <select id="ditherAlgorithmSelect" class="sr-only" aria-label="抖动算法" tabindex="-1">
+                                <option value="floyd-steinberg">Floyd Steinberg</option>
+                                <option value="false-floyd-steinberg">False Floyd Steinberg</option>
+                                <option value="minimized-average-error">Minimized Average Error</option>
+                                <option value="stucki">Stucki</option>
+                                <option value="atkinson" selected>Atkinson</option>
+                                <option value="burkes">Burkes</option>
+                                <option value="sierra">Sierra</option>
+                                <option value="two-row">Two Row</option>
+                                <option value="sierra-lite">Sierra Lite</option>
+                            </select>
+                            <div class="custom-select algorithm-picker" id="ditherAlgorithmPicker">
+                                <button type="button" class="custom-select-trigger" id="ditherAlgorithmTrigger" aria-haspopup="listbox"
+                                    aria-expanded="false">Atkinson</button>
+                                <div class="custom-select-menu" id="ditherAlgorithmMenu" hidden>
+                                    <div class="custom-select-options" id="ditherAlgorithmOptions" role="listbox" aria-label="抖动算法选项">
+                                        <button type="button" class="custom-select-option" data-value="floyd-steinberg">Floyd Steinberg</button>
+                                        <button type="button" class="custom-select-option" data-value="false-floyd-steinberg">False Floyd Steinberg</button>
+                                        <button type="button" class="custom-select-option" data-value="minimized-average-error">Minimized Average Error</button>
+                                        <button type="button" class="custom-select-option" data-value="stucki">Stucki</button>
+                                        <button type="button" class="custom-select-option" data-value="atkinson">Atkinson</button>
+                                        <button type="button" class="custom-select-option" data-value="burkes">Burkes</button>
+                                        <button type="button" class="custom-select-option" data-value="sierra">Sierra</button>
+                                        <button type="button" class="custom-select-option" data-value="two-row">Two Row</button>
+                                        <button type="button" class="custom-select-option" data-value="sierra-lite">Sierra Lite</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="checkbox" id="showOuterMask" checked hidden>
+                    <input type="checkbox" id="ditherEnabled" checked hidden>
                 </section>
 
                 <section class="panel-section">
@@ -143,34 +194,27 @@
                 </section>
 
                 <section class="panel-section">
-                    <h2>抖动与色板</h2>
-                    <div class="field" style="margin-bottom: 10px;">
-                        <label for="backgroundColorInput">画布填充色</label>
-                        <div class="compact-color-row">
-                            <input class="color-swatch-input" type="color" id="backgroundColorInput" value="#ffffff">
-                            <select id="paletteSelect">
-                                <option value="__none__">不使用调色板</option>
-                                <option value="4-color.act" selected>4-color.act</option>
-                                <option value="6-color.act">6-color.act</option>
-                                <option value="Black-White.act">Black-White.act</option>
-                                <option value="Black-White-Red.act">Black-White-Red.act</option>
-                                <option value="Black-White-Yellow.act">Black-White-Yellow.act</option>
-                                <option value="N-color.act">N-color.act</option>
-                            </select>
+                    <div class="field-grid compact-toggle-grid">
+                        <div class="preview-mode-toggle preview-action-row" id="previewModeToggle">
+                            <button type="button" id="previewToggleBtn" class="mode-btn">开始预览（Tab）</button>
+                            <button type="button" id="swapDimensionsBtn" class="mode-btn">切换横屏（Q）</button>
                         </div>
                     </div>
-                    <input type="checkbox" id="showOuterMask" checked hidden>
-                    <input type="checkbox" id="ditherEnabled" checked hidden>
+                </section>
+
+                <section class="panel-section">
                     <div class="field-grid compact-toggle-grid">
-                        <div class="preview-mode-toggle" id="previewModeToggle">
-                            <button type="button" id="previewModeFitBtn" class="mode-btn">编辑视图</button>
-                            <button type="button" id="previewModeActualBtn" class="mode-btn">预览视图</button>
+                        <div class="preview-mode-toggle scan-mode-toggle" id="scanModeToggle">
+                            <button type="button" id="scanModeRasterBtn" class="mode-btn">光栅扫描</button>
+                            <button type="button" id="scanModeSerpentineBtn" class="mode-btn is-active">蛇形扫描</button>
                         </div>
                     </div>
                 </section>
             </aside>
         </div>
     </div>
+
+    <div class="hover-tooltip" id="ditherAlgorithmTooltip" hidden></div>
 
     <div class="modal-backdrop" id="presetManagerModal" hidden>
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="presetManagerTitle">
@@ -199,7 +243,7 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
-    <script type="module" src="./assets/js/main.js?v=20260417"></script>
+    <script type="module" src="./assets/js/main.js?v=20260418-3"></script>
 </body>
 
 </html>

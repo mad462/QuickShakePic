@@ -6,17 +6,18 @@ import {
     revokeOriginalImageURL,
     state,
     constants
-} from './state.js?v=20260417';
+} from './state.js?v=20260418-3';
 import {
     applyImageAdjustmentsToCanvas,
     canvasToBMP,
+    DEFAULT_DITHER_ALGORITHM,
     exportIndexedBMP,
     fillCanvasBackground,
     getIndexedBmpBitDepth,
     quantizeCanvasToIndexed,
     resetAdjustments
-} from './image-processing.js?v=20260417';
-import { normalizeHexColor } from './utils.js?v=20260417';
+} from './image-processing.js?v=20260418-3';
+import { normalizeHexColor } from './utils.js?v=20260418-3';
 
 function getExportFileName(fileSuffix) {
     return `crop_${state.targetWidth}x${state.targetHeight}_${fileSuffix}_${Date.now()}.bmp`;
@@ -84,11 +85,13 @@ export function updateDitherUIState() {
     const shouldShow = Boolean(state.cropper) && refs.ditherEnabledInput.checked && !state.suppressDitherPreview;
     refs.cropFramePreview.style.display = shouldShow ? 'flex' : 'none';
     refs.editorStage?.classList.toggle('preview-actual-active', shouldShow && state.previewMode === 'actual');
-    refs.previewModeActualBtn && (refs.previewModeActualBtn.disabled = !shouldShow);
-    refs.previewModeFitBtn && (refs.previewModeFitBtn.disabled = !shouldShow);
-    refs.previewModeActualBtn?.classList.toggle('is-active', state.previewMode === 'actual');
-    refs.previewModeFitBtn?.classList.toggle('is-active', state.previewMode === 'fit');
     refs.exportBtn.textContent = refs.ditherEnabledInput.checked ? '导出8bitBMP' : '导出24bitBMP';
+    if (refs.ditherAlgorithmSelect) {
+        refs.ditherAlgorithmSelect.disabled = !refs.ditherEnabledInput.checked;
+    }
+    if (refs.ditherAlgorithmTrigger) {
+        refs.ditherAlgorithmTrigger.disabled = !refs.ditherEnabledInput.checked;
+    }
 }
 
 export function updateOverlayVisibility() {
@@ -199,12 +202,11 @@ export function getFixedCropBoxSize() {
     if (
         state.previewMode === 'actual' &&
         state.targetWidth > 0 &&
-        state.targetHeight > 0 &&
-        refs.ditherEnabledInput?.checked
+        state.targetHeight > 0
     ) {
         return {
-            width: Math.max(80, Math.round(state.targetWidth)),
-            height: Math.max(80, Math.round(state.targetHeight))
+            width: Math.max(1, Math.round(state.targetWidth)),
+            height: Math.max(1, Math.round(state.targetHeight))
         };
     }
 
@@ -363,7 +365,7 @@ export function applyWeakSnap() {
 export function initializeCropper() {
     state.cropper = new Cropper(refs.image, {
         viewMode: 0,
-        dragMode: 'move',
+        dragMode: state.previewMode === 'actual' ? 'none' : 'move',
         autoCrop: true,
         autoCropArea: 1,
         background: false,
@@ -381,21 +383,24 @@ export function initializeCropper() {
         toggleDragModeOnDblclick: false,
         wheelZoomRatio: 0.1,
         ready() {
-            state.cropper.setDragMode('move');
+            state.cropper.setDragMode(state.previewMode === 'actual' ? 'none' : 'move');
             clearSnapState();
             applyFixedCropBox(state.previewMode === 'actual');
             updateInfo();
             updateDitherUIState();
+            syncZoomControls();
             schedulePreviewRender();
         },
         cropmove() {
             applyWeakSnap();
             applyFixedCropBox(state.previewMode === 'actual');
+            syncZoomControls();
             schedulePreviewRender();
         },
         zoom() {
             requestAnimationFrame(() => {
                 applyFixedCropBox(state.previewMode === 'actual');
+                syncZoomControls();
                 schedulePreviewRender();
             });
         }
@@ -514,7 +519,78 @@ export function applyResolution() {
     applyFixedCropBox(state.previewMode === 'actual');
     syncPresetSelection();
     updateInfo();
+    syncZoomControls();
     schedulePreviewRender();
+}
+
+export function getCurrentZoomPercent() {
+    if (!state.cropper) {
+        return 100;
+    }
+
+    const cropBoxData = state.cropper.getCropBoxData();
+    const canvasData = state.cropper.getCanvasData();
+    if (!cropBoxData || !canvasData || cropBoxData.width <= 0 || cropBoxData.height <= 0) {
+        return 100;
+    }
+
+    const zoomRatio = Math.min(
+        canvasData.width / cropBoxData.width,
+        canvasData.height / cropBoxData.height
+    );
+
+    if (!Number.isFinite(zoomRatio) || zoomRatio <= 0) {
+        return 100;
+    }
+
+    return Math.min(400, Math.max(25, Math.round(zoomRatio * 100)));
+}
+
+export function syncZoomControls() {
+    if (!refs.zoomInput || !refs.zoomValue) {
+        return;
+    }
+
+    const zoomPercent = getCurrentZoomPercent();
+    refs.zoomInput.value = String(zoomPercent);
+    refs.zoomValue.textContent = `${zoomPercent}%`;
+}
+
+export function applyZoomPercent(nextPercent) {
+    if (!state.cropper) {
+        return false;
+    }
+
+    const cropBoxData = state.cropper.getCropBoxData();
+    const canvasData = state.cropper.getCanvasData();
+    if (!cropBoxData || !canvasData || cropBoxData.width <= 0 || cropBoxData.height <= 0) {
+        return false;
+    }
+
+    const currentRatio = Math.min(
+        canvasData.width / cropBoxData.width,
+        canvasData.height / cropBoxData.height
+    );
+    if (!Number.isFinite(currentRatio) || currentRatio <= 0) {
+        return false;
+    }
+
+    const targetRatio = Math.min(400, Math.max(25, Number(nextPercent) || 100)) / 100;
+    const scaleFactor = targetRatio / currentRatio;
+    const cropCenterX = cropBoxData.left + cropBoxData.width / 2;
+    const cropCenterY = cropBoxData.top + cropBoxData.height / 2;
+
+    state.cropper.setCanvasData({
+        left: cropCenterX - (canvasData.width * scaleFactor) / 2,
+        top: cropCenterY - (canvasData.height * scaleFactor) / 2,
+        width: canvasData.width * scaleFactor,
+        height: canvasData.height * scaleFactor
+    });
+
+    applyFixedCropBox(state.previewMode === 'actual');
+    syncZoomControls();
+    schedulePreviewRender();
+    return true;
 }
 
 export function getProcessedCanvas() {
@@ -581,10 +657,13 @@ export async function exportBMP() {
     let fileSuffix;
 
     if (refs.ditherEnabledInput.checked) {
-        const processed = quantizeCanvasToIndexed(canvas, refs.paletteSelect.value);
+        const ditherAlgorithm = refs.ditherAlgorithmSelect?.value || DEFAULT_DITHER_ALGORITHM;
+        const serpentine = state.scanMode !== 'raster';
+        const processed = quantizeCanvasToIndexed(canvas, refs.paletteSelect.value, ditherAlgorithm, serpentine);
         const bitDepth = getIndexedBmpBitDepth(processed.palette.length);
         bmpBuffer = exportIndexedBMP(processed.indices, processed.width, processed.height, processed.palette);
-        fileSuffix = `${refs.paletteSelect.value.replace('.act', '')}_floyd-steinberg_indexed${bitDepth}`;
+        const serpentineSuffix = serpentine ? 'serpentine' : 'scanline';
+        fileSuffix = `${refs.paletteSelect.value.replace('.act', '')}_${ditherAlgorithm}_${serpentineSuffix}_indexed${bitDepth}`;
     } else {
         bmpBuffer = canvasToBMP(canvas);
         fileSuffix = 'rgb24';
@@ -620,6 +699,7 @@ export function resetEditor() {
     }
     applyFixedCropBox(state.previewMode === 'actual');
     updateInfo();
+    syncZoomControls();
     schedulePreviewRender();
 }
 
@@ -670,7 +750,9 @@ export function renderPreview() {
         return;
     }
 
-    const processed = quantizeCanvasToIndexed(canvas, refs.paletteSelect.value);
+    const ditherAlgorithm = refs.ditherAlgorithmSelect?.value || DEFAULT_DITHER_ALGORITHM;
+    const serpentine = state.scanMode !== 'raster';
+    const processed = quantizeCanvasToIndexed(canvas, refs.paletteSelect.value, ditherAlgorithm, serpentine);
     refs.previewCanvas.width = processed.width;
     refs.previewCanvas.height = processed.height;
     refs.previewCanvas.getContext('2d').putImageData(processed.imageData, 0, 0);
