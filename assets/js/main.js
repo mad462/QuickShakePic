@@ -22,13 +22,14 @@ import {
     stopPreviewDrag,
     syncPresetSelection,
     tryAutoApplyResolution,
+    fitImageToCropBox,
     updateCustomSizeVisibility,
     updateOverlayVisibility,
     updatePreviewCanvasPresentation,
     updateDitherUIState,
     updateInfo,
     updateOverlayMask
-} from './editor.js?v=20260418-3';
+} from './editor.js?v=20260418-5';
 import {
     applyPresetSelection,
     initializePresetManager,
@@ -574,9 +575,6 @@ function swapOrientation(options = {}) {
 
     syncPresetSelection();
     tryAutoApplyResolution();
-    if (state.cropper) {
-        fitImageToCropBox();
-    }
     updateOrientationButtonText();
     updatePreviewEditingLockState();
     persistUserSettings();
@@ -1269,41 +1267,6 @@ function bindKeyboardShortcuts() {
         state.workspacePanState = null;
         refs.editorStage.classList.remove('workspace-panning');
     });
-}
-
-function fitImageToCropBox() {
-    if (!state.cropper) {
-        return false;
-    }
-
-    const cropBoxData = state.cropper.getCropBoxData();
-    const canvasData = state.cropper.getCanvasData();
-
-    if (!cropBoxData || !canvasData || !canvasData.width || !canvasData.height) {
-        return false;
-    }
-
-    const scaleFactor = Math.max(
-        cropBoxData.width / canvasData.width,
-        cropBoxData.height / canvasData.height
-    );
-
-    const nextWidth = canvasData.width * scaleFactor;
-    const nextHeight = canvasData.height * scaleFactor;
-    const cropCenterX = cropBoxData.left + cropBoxData.width / 2;
-    const cropCenterY = cropBoxData.top + cropBoxData.height / 2;
-
-    state.cropper.setCanvasData({
-        left: cropCenterX - nextWidth / 2,
-        top: cropCenterY - nextHeight / 2,
-        width: nextWidth,
-        height: nextHeight
-    });
-
-    applyFixedCropBox(state.previewMode === 'actual');
-    syncZoomControls();
-    schedulePreviewRender();
-    return true;
 }
 
 function bindWindowInteractions() {

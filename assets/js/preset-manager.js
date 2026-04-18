@@ -3,7 +3,7 @@ import {
     setInputsFromDimensions,
     tryAutoApplyResolution,
     updateCustomSizeVisibility
-} from './editor.js?v=20260418-3';
+} from './editor.js?v=20260418-5';
 
 const DEFAULT_PRESET_CONFIGS = [
     { id: 'preset-200x200', name: '1.54"', width: 200, height: 200 },

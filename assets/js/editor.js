@@ -501,6 +501,41 @@ export function tryAutoApplyResolution() {
     }
 }
 
+export function fitImageToCropBox() {
+    if (!state.cropper) {
+        return false;
+    }
+
+    const cropBoxData = state.cropper.getCropBoxData();
+    const canvasData = state.cropper.getCanvasData();
+
+    if (!cropBoxData || !canvasData || !canvasData.width || !canvasData.height) {
+        return false;
+    }
+
+    const scaleFactor = Math.max(
+        cropBoxData.width / canvasData.width,
+        cropBoxData.height / canvasData.height
+    );
+
+    const nextWidth = canvasData.width * scaleFactor;
+    const nextHeight = canvasData.height * scaleFactor;
+    const cropCenterX = cropBoxData.left + cropBoxData.width / 2;
+    const cropCenterY = cropBoxData.top + cropBoxData.height / 2;
+
+    state.cropper.setCanvasData({
+        left: cropCenterX - nextWidth / 2,
+        top: cropCenterY - nextHeight / 2,
+        width: nextWidth,
+        height: nextHeight
+    });
+
+    applyFixedCropBox(state.previewMode === 'actual');
+    syncZoomControls();
+    schedulePreviewRender();
+    return true;
+}
+
 export function applyResolution() {
     if (!state.cropper) {
         return;
@@ -519,8 +554,7 @@ export function applyResolution() {
     applyFixedCropBox(state.previewMode === 'actual');
     syncPresetSelection();
     updateInfo();
-    syncZoomControls();
-    schedulePreviewRender();
+    fitImageToCropBox();
 }
 
 export function getCurrentZoomPercent() {
